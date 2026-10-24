@@ -3,9 +3,10 @@
 API and workers for Lypcut, an AI-native video editor. Node 22, TypeScript (strict), Fastify, Postgres
 (Drizzle), BullMQ on Redis, S3-compatible storage (MinIO locally, AWS S3 in production), FFmpeg.
 
-Phase 1 covers accounts, resumable uploads, the processing pipeline (scenes, Hindi/Hinglish/English transcription,
-hooks and chapters), live job status, the reversible timeline API with undo, redo, history and restore, read APIs and
-search, and OpenTimelineIO export. The front end is the sibling folder `../frontend`. Reference: [API.md](API.md) (and
+Phase 1 covers accounts, resumable uploads, the processing pipeline (scenes, Hindi/Hinglish/English transcription),
+live job status, the reversible timeline API with undo, redo, history and restore, read APIs and OpenTimelineIO export.
+Phase 2 adds the AI side: an assistant that turns a chat message into a validated edit, search by meaning, hooks and chapters
+found automatically, and the limits and usage records around the model. The front end is the sibling folder `../frontend`. Reference: [API.md](API.md) (and
 `/docs` on a running server), [DECISIONS.md](DECISIONS.md) for why things are the way they are.
 
 ## How it fits together
@@ -16,13 +17,14 @@ search, and OpenTimelineIO export. The front end is the sibling folder `../front
    ▼                            ▼                                                  ▼
  ┌────────────── API (Fastify) ──────────────┐                      ┌── Object storage (S3 / MinIO) ──┐
  │ auth · projects · uploads · timeline ·    │◄──── presigned URLs ─┤ users/<id>/projects/<id>/…      │
- │ content · search · jobs (+ WebSocket)     │                      │  raw · proxy · scenes · thumbs  │
+ │ content · search · assistant · jobs (+ WS) │                      │  raw · proxy · scenes · thumbs  │
  └──────┬───────────────────┬────────────────┘                      └────────────────▲────────────────┘
         │ SQL               │ BullMQ jobs + pub/sub                                    │ read / write
         ▼                   ▼                                                          │
    Postgres             Redis  ──────────►  Worker (same image, `node dist/worker.js`) ─┘
    (source of truth)    (queues, rate                runs the pipeline: probe → scenes → proxy →
-                         limits, live events)         audio → transcribe → index → timeline → ready
+                         limits, live events)         audio → transcribe → embed → hooks → chapters → index →
+                                                      timeline → ready
 ```
 
 - **Postgres is the source of truth** for everything that matters (accounts, projects, jobs, transcripts, timelines
@@ -77,18 +79,20 @@ npm run worker     # worker
 
 ## Scripts
 
-| Script                | What it does                                 |
-| --------------------- | -------------------------------------------- |
-| `npm run dev`         | API with hot reload                          |
-| `npm run worker`      | Worker with hot reload                       |
-| `npm run build`       | Compile to `dist/`                           |
-| `npm start`           | Run the compiled API                         |
-| `npm run db:generate` | Generate a migration from the Drizzle schema |
-| `npm run db:migrate`  | Apply migrations                             |
-| `npm run db:seed`     | Seed development data                        |
-| `npm test`            | Unit and integration tests                   |
-| `npm run lint`        | ESLint                                       |
-| `npm run typecheck`   | `tsc --noEmit`                               |
+| Script                               | What it does                                                  |
+| ------------------------------------ | ------------------------------------------------------------- |
+| `npm run dev`                        | API with hot reload                                           |
+| `npm run worker`                     | Worker with hot reload                                        |
+| `npm run build`                      | Compile to `dist/`                                            |
+| `npm start`                          | Run the compiled API                                          |
+| `npm run db:generate`                | Generate a migration from the Drizzle schema                  |
+| `npm run db:migrate`                 | Apply migrations                                              |
+| `npm run db:seed`                    | Seed development data                                         |
+| `npm test`                           | Unit and integration tests                                    |
+| `npm run eval`                       | The assistant's evaluation (see below)                        |
+| `npm run models:download-embeddings` | Fetch the search-by-meaning model (Compose does this for you) |
+| `npm run lint`                       | ESLint                                                        |
+| `npm run typecheck`                  | `tsc --noEmit`                                                |
 
 ## Tests
 
@@ -151,6 +155,20 @@ GET /api/projects/:id/assets/:assetId/url        a fresh link for one file
 A project that is still processing answers `409 NOT_READY`. Video bytes never pass through the API: files are presigned links
 (or CDN links once `CDN_BASE_URL` is set).
 
+### The assistant
+
+```
+POST /api/projects/:id/assistant/messages    { text, playhead, history }      -> text, a question, or an Edit card
+POST /api/projects/:id/assistant/answers     { question, optionId, ... }      -> the next question, or the Edit card
+POST /api/projects/:id/assistant/reel        { srcFrom, srcTo, title, fast }  -> an Edit card (no model, not counted)
+GET  /api/projects/:id/plans                 the Edit cards made so far, with where each one stands
+POST /api/projects/:id/plans/:planId/apply   { baseVersion }                  -> a new version by the assistant
+GET  /api/me/usage                           the plan and today's assistant allowance
+```
+
+The model picks a tool and names things by id; the server builds the op, checks it against a copy of the timeline with the same
+engine the editor uses, and only then returns it. See [API.md](API.md#assistant) and, for the reasoning, [DECISIONS.md](DECISIONS.md).
+
 ### Editing the timeline
 
 ```
@@ -206,8 +224,46 @@ Everything comes from environment variables, validated at startup. The process e
 message if anything is wrong. Every variable is documented, with its default, in [`.env.example`](.env.example);
 the groups are Process, HTTP (CORS, rate limits), Auth (secrets, token lifetimes, lockout), Uploads and media
 (limits, part size, link lifetimes), Transcription (provider and its keys), Processing (retries, scene detection),
-the live job feed, Postgres, Redis and object storage. In production a secret must be set to a real value
+the live job feed, Postgres, Redis and object storage, and the language model (below). In production a secret must be set to a real value
 (startup refuses the development defaults), `COOKIE_SECURE` defaults on, and `CORS_ORIGINS` cannot be `*`.
+
+### The language model
+
+The assistant, the hooks and the chapters use a language model; search by meaning uses an embedding model. Neither needs an
+account to run the product.
+
+| Variable                                                                               | Default                                  | What it does                                                                                                                                            |
+| -------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`                                                                         | `auto`                                   | `auto` uses Claude when `ANTHROPIC_API_KEY` is set and the built-in offline model otherwise; `anthropic` requires the key; `fake` is always offline     |
+| `ANTHROPIC_API_KEY`                                                                    | empty                                    | Claude. Leave empty to run offline                                                                                                                      |
+| `LLM_MODEL_PLANNER` / `LLM_MODEL_BATCH`                                                | `claude-sonnet-5-5` / `claude-haiku-5-5` | Chat planning / highlights and chapters                                                                                                                 |
+| `LLM_EFFORT_PLANNER` / `LLM_EFFORT_BATCH`                                              | `low`                                    | Speed against care. These models take no temperature                                                                                                    |
+| `LLM_MONTHLY_BUDGET_USD`                                                               | `0` (no ceiling)                         | At the ceiling the offline model takes over for the rest of the month (UTC)                                                                             |
+| `LLM_BREAKER_FAILURES` / `LLM_BREAKER_COOLDOWN_SEC`                                    | `5` / `60`                               | Provider failures in a row before the offline model takes over, and for how long                                                                        |
+| `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_MAX_INPUT_TOKENS`, `LLM_MAX_OUTPUT_TOKENS_*` | see `.env.example`                       | Per-call limits                                                                                                                                         |
+| `PLANNER_DAILY_LIMIT`                                                                  | `30`                                     | Assistant requests per person per UTC day (times 5 for creator, 20 for studio)                                                                          |
+| `PLANNER_BURST_PER_MINUTE`                                                             | `10`                                     | Assistant requests per person per minute                                                                                                                |
+| `EMBEDDING_PROVIDER`                                                                   | `auto`                                   | `local` (multilingual-e5-small, about 120 MB, runs in the API), `hosted` (any OpenAI-compatible `/embeddings`), `fake`; `auto` is local when downloaded |
+| `EMBEDDING_MODEL_DIR`                                                                  | `models/embeddings`                      | Where the local model lives (Compose downloads it once)                                                                                                 |
+
+To use Claude: put `ANTHROPIC_API_KEY=…` in `backend/.env` (or the shell) and `docker compose up -d`. To see what it costs,
+`GET /api/me/usage` for one person, or sum the `llm_usage` table. Both a model call and its cost are recorded there, with no text.
+
+### What is sent to a model provider
+
+Only when a key (or a hosted embedding service) is configured. With none, nothing leaves your machine.
+
+| Request                                           | Sent to               | What is in it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A chat message                                    | Claude                | The system prompt; one `<data>` block with the video's duration and the edit's state (clip count, caption style, filler and pause counts left), the playhead, the **transcript sentences** (id, speaker label, start and end, text), your language setting (Hindi, Hinglish or English), the highlights and chapters (id, title, times, score) and the caption style names; the last 8 turns of the conversation (600 characters each) and the message (1,000 characters at most, control characters removed) |
+| Scoring highlights                                | Claude                | For up to 24 candidate stretches: id, times, cheap signals, pace, filler share and a **transcript excerpt**                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Titling chapters                                  | Claude                | For each chapter: index, times and a **transcript excerpt** (700 characters at most)                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Embedding (only with `EMBEDDING_PROVIDER=hosted`) | the embedding service | The text of each three-sentence window while a video is processed, and each search query                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+Never sent: names, email addresses, account details, file names, project titles, video or audio, links to storage. Messages and
+replies are not written to the log at info level, and `llm_usage` holds counts and costs only. A saved Edit card's title may repeat a
+phrase from the message (a search term, say). The system prompt
+tells the model that everything in the data block is material to read, never instructions.
 
 ## Security in short
 
@@ -266,7 +322,20 @@ Two bucket settings are needed on S3 (and MinIO already behaves this way locally
 The worker needs `ffmpeg`, `ffprobe` and (for local transcription) the `whisper-cli` binary, all in the Docker image.
 For hosted transcription set `TRANSCRIPTION_PROVIDER=openai` or `assemblyai` and the matching key; no binary or model is needed.
 
-## Not in Phase 1
+## The evaluation
 
-The language-model assistant (the front end's planner still runs in the browser), Instagram and style learning, billing,
-music and YouTube import, MP4 rendering (OTIO export is real), Terraform and the AWS deployment itself.
+```bash
+docker compose up -d postgres redis minio
+npm run eval                            # the offline model: free, deterministic, what CI runs
+EVAL_PROVIDER=anthropic npm run eval    # Claude (needs ANTHROPIC_API_KEY; a few cents for the whole set)
+```
+
+55 prompts in English, Hinglish and Hindi (`eval/golden.ts`) go through the real planner on a real project. The report gives
+tool accuracy, outcome accuracy, plan validity, repair rate, latency (p50 and p95), tokens and estimated cost per request, and
+lists every miss; a copy is written to `eval/results/`. An invalid plan coming back fails the run whatever else happens. Add a
+prompt to `golden.ts` whenever the assistant gets something wrong in real use.
+
+## Not yet
+
+Instagram and style learning (Phase 3), billing, music and YouTube import (music is deliberately never added by the assistant),
+MP4 rendering (OTIO export is real), keeping the chat across reloads, Terraform and the AWS deployment itself.

@@ -20,6 +20,9 @@ echo "VITE_API_MODE=real" > .env.local
 npm run dev          # http://localhost:5173
 ```
 
+No API key is needed: the assistant, hooks and chapters run on a built-in offline model. To use Claude, put
+`ANTHROPIC_API_KEY` in `backend/.env` before `docker compose up`. A three-minute walk-through is in [`DEMO.md`](DEMO.md).
+
 Front end only, no server: `cd frontend && npm install && npm run dev` (mock mode).
 
 See each folder's README for details, [`backend/API.md`](backend/API.md) for the API and

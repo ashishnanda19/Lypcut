@@ -193,26 +193,20 @@ class Remote implements Syncer {
 
   commit(version: Version, before: Timeline) {
     this.enqueue(async () => {
-      const res = await api.post<CommitDto>(
-        ...(isServerPlan(version)
-          ? ([
-              `/projects/${this.projectId}/plans/${version.editId}/apply`,
-              { baseVersion: this.version },
-            ] as const)
-          : ([
-              `${base(this.projectId)}/ops`,
-              {
-                baseVersion: this.version,
-                ops: [version.op],
-                label: version.label,
-                author: version.author,
-                ...(version.editId ? { editId: version.editId } : {}),
-                ...(version.undoesEditId && UUID.test(version.undoesEditId)
-                  ? { undoesEditId: version.undoesEditId }
-                  : {}),
-              },
-            ] as const)),
-      )
+      const res = isServerPlan(version)
+        ? await api.post<CommitDto>(`/projects/${this.projectId}/plans/${version.editId}/apply`, {
+            baseVersion: this.version,
+          })
+        : await api.post<CommitDto>(`${base(this.projectId)}/ops`, {
+            baseVersion: this.version,
+            ops: [version.op],
+            label: version.label,
+            author: version.author,
+            ...(version.editId ? { editId: version.editId } : {}),
+            ...(version.undoesEditId && UUID.test(version.undoesEditId)
+              ? { undoesEditId: version.undoesEditId }
+              : {}),
+          })
       this.version = res.state.version
       const store = useEditor.getState()
       const mine = [...store.versions, ...store.archived].find((v) => v.id === version.id)
