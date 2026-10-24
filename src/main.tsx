@@ -7,16 +7,19 @@ import '@fontsource/noto-sans-devanagari/600.css'
 import '@fontsource/noto-sans-devanagari/700.css'
 import '@/styles/index.css'
 import { App } from '@/app/App'
+import { isReal } from '@/lib/runtime'
+import { useAuth } from '@/stores/auth'
 
 /**
- * The mock API answers /api/* in the browser. Start it before the first render so no request
- * ever reaches a missing server. Set VITE_MOCK=off to skip it when a real backend exists.
+ * VITE_API_MODE picks the backend. In "mock" the in-browser mock answers every /api route. In "real" the Lypcut
+ * backend does, and the mock only answers /api/style/* (a later phase). Either way it starts before the first render,
+ * so no request ever reaches a missing handler.
  */
 async function boot() {
-  if (import.meta.env.VITE_MOCK !== 'off') {
-    const { startMockApi } = await import('@/mocks/browser')
-    await startMockApi()
-  }
+  const { startMockApi } = await import('@/mocks/browser')
+  await startMockApi(isReal ? 'style' : 'all')
+  // A stored sign-in is only a hint: ask the server whether it still holds before showing anything private.
+  await useAuth.getState().hydrate()
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />

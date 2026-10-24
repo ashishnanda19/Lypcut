@@ -4,6 +4,10 @@ import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Input } from '@/components/ui/Input'
 import { ApiError } from '@/api/client'
+import { isReal } from '@/lib/runtime'
+
+/** The backend's minimum, checked here first so the message appears beside the field before a round trip. */
+export const MIN_PASSWORD = 8
 
 export type AuthMode = 'login' | 'signup'
 
@@ -50,11 +54,9 @@ export function AuthForm({ mode, onSubmit, onGoogle }: Props) {
     const next: typeof errors = {}
     if (mode === 'signup' && !name.trim()) next.name = 'Tell us what to call you.'
     if (!EMAIL.test(email)) next.email = 'Enter a valid email, like aarav@gmail.com.'
-    if (password.length < 6)
-      next.password =
-        mode === 'signup'
-          ? 'Choose a password with at least 6 characters.'
-          : 'Enter your password (at least 6 characters).'
+    if (mode === 'signup' && password.length < MIN_PASSWORD)
+      next.password = `Choose a password with at least ${MIN_PASSWORD} characters.`
+    else if (mode === 'login' && !password) next.password = 'Enter your password.'
     setErrors(next)
     if (Object.keys(next).length) return
     void run('form', () => onSubmit({ name, email, password }))
@@ -62,23 +64,27 @@ export function AuthForm({ mode, onSubmit, onGoogle }: Props) {
 
   return (
     <div>
-      <Button
-        type="button"
-        variant="secondary"
-        size="lg"
-        className="w-full"
-        loading={busy === 'google'}
-        disabled={busy !== null}
-        leading={<KeyRound className="size-4" aria-hidden="true" />}
-        onClick={() => void run('google', onGoogle)}
-      >
-        Continue with Google
-      </Button>
-      <div className="my-6 flex items-center gap-3 text-xs text-faint" aria-hidden="true">
-        <span className="h-px flex-1 bg-line" />
-        or use email
-        <span className="h-px flex-1 bg-line" />
-      </div>
+      {!isReal && (
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            loading={busy === 'google'}
+            disabled={busy !== null}
+            leading={<KeyRound className="size-4" aria-hidden="true" />}
+            onClick={() => void run('google', onGoogle)}
+          >
+            Continue with Google
+          </Button>
+          <div className="my-6 flex items-center gap-3 text-xs text-faint" aria-hidden="true">
+            <span className="h-px flex-1 bg-line" />
+            or use email
+            <span className="h-px flex-1 bg-line" />
+          </div>
+        </>
+      )}
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         {mode === 'signup' && (
           <Input
@@ -107,11 +113,11 @@ export function AuthForm({ mode, onSubmit, onGoogle }: Props) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          placeholder="At least 6 characters"
+          placeholder={mode === 'signup' ? `At least ${MIN_PASSWORD} characters` : 'Your password'}
           leading={<Lock className="size-4" aria-hidden="true" />}
           hint={
-            mode === 'login'
-              ? 'Preview: any email works with a password of 6+ characters.'
+            mode === 'login' && !isReal
+              ? 'Preview: any email works with a password of 8+ characters.'
               : undefined
           }
           error={errors.password}

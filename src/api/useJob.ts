@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Job } from '@/types'
+import { jobsSocketUrl } from '@/lib/runtime'
 import { api } from './client'
-
-const SOCKET_URL = 'wss://api.lypcut.mock/jobs'
 
 interface JobState {
   job: Job | null
@@ -47,7 +46,7 @@ export function useJob(jobId: string | null | undefined): JobState {
     }
 
     try {
-      socket = new WebSocket(SOCKET_URL)
+      socket = new WebSocket(jobsSocketUrl())
       socket.onopen = () => {
         setLive(true)
         socket?.send(JSON.stringify({ type: 'subscribe', jobId }))

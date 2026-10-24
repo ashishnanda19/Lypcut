@@ -1,13 +1,10 @@
 import { MotionConfig } from 'framer-motion'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/Tooltip'
 import { Toaster } from '@/components/ui/Toast'
+import { queryClient } from '@/api/queryClient'
 import { router } from './router'
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } },
-})
 
 export function App() {
   return (

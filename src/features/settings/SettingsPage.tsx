@@ -60,10 +60,18 @@ function Profile() {
   const [name, setName] = useState(user?.name ?? '')
   const [lang, setLang] = useState<string>(user?.language ?? 'hinglish')
   const dirty = name.trim() !== user?.name || lang !== user?.language
-  const save = () => {
+  const save = async () => {
     if (!name.trim()) return
-    update({ name: name.trim(), language: lang as Lang })
-    toast({ title: 'Profile saved', tone: 'success' })
+    try {
+      await update({ name: name.trim(), language: lang as Lang })
+      toast({ title: 'Profile saved', tone: 'success' })
+    } catch (e) {
+      toast({
+        title: 'Could not save your profile',
+        description: e instanceof Error ? e.message : 'Please try again.',
+        tone: 'error',
+      })
+    }
   }
   return (
     <Section title="Profile" note="Your name and the language Kaat talks to you in.">

@@ -67,6 +67,44 @@ const jobsHandler = jobsSocket.addEventListener('connection', ({ client }) => {
   client.addEventListener('close', () => unsubs.forEach((u) => u()))
 })
 
+/** Style profile routes. Against the real backend these are still answered here (Phase 3). */
+export const styleHandlers = [
+  http.get('/api/style', async () => {
+    await lag()
+    return HttpResponse.json(styleProfile())
+  }),
+  http.get('/api/style/reels', async () => {
+    await lag(200, 400)
+    return HttpResponse.json(
+      db.style.connected && db.style.source === 'instagram'
+        ? REELS
+        : db.style.connected
+          ? REELS.slice(0, db.style.reels)
+          : [],
+    )
+  }),
+  http.post('/api/style/connect', async () => {
+    await lag(700, 1200)
+    db.style.connected = true
+    db.style.source = 'instagram'
+    return HttpResponse.json(styleProfile())
+  }),
+  http.post('/api/style/upload', async ({ request }) => {
+    const body = (await request.json()) as { count?: number }
+    await lag(800, 1400)
+    db.style.connected = true
+    db.style.source = 'upload'
+    db.style.reels = Math.max(3, Math.min(REELS.length, body.count ?? 3))
+    return HttpResponse.json(styleProfile())
+  }),
+  http.delete('/api/style/connect', async () => {
+    await lag(200, 400)
+    db.style.connected = false
+    db.style.source = null
+    return HttpResponse.json(styleProfile())
+  }),
+]
+
 export const handlers = [
   jobsHandler,
   /* ------------------------------ auth ------------------------------ */
@@ -79,9 +117,9 @@ export const handlers = [
         { status: 422 },
       )
     }
-    if (!body.password || body.password.length < 6) {
+    if (!body.password || body.password.length < 8) {
       return HttpResponse.json(
-        { message: 'That password is too short. Use at least 6 characters.', field: 'password' },
+        { message: 'That password is too short. Use at least 8 characters.', field: 'password' },
         { status: 401 },
       )
     }
@@ -97,9 +135,9 @@ export const handlers = [
         { status: 422 },
       )
     }
-    if (!body.password || body.password.length < 6) {
+    if (!body.password || body.password.length < 8) {
       return HttpResponse.json(
-        { message: 'Choose a password with at least 6 characters.', field: 'password' },
+        { message: 'Choose a password with at least 8 characters.', field: 'password' },
         { status: 422 },
       )
     }
@@ -269,40 +307,5 @@ export const handlers = [
     const job = createExportJob(String(params.id), body.kind ?? 'export', body.durationMs ?? 6500)
     return HttpResponse.json(job, { status: 201 })
   }),
-
-  /* --------------------------- style profile -------------------------- */
-  http.get('/api/style', async () => {
-    await lag()
-    return HttpResponse.json(styleProfile())
-  }),
-  http.get('/api/style/reels', async () => {
-    await lag(200, 400)
-    return HttpResponse.json(
-      db.style.connected && db.style.source === 'instagram'
-        ? REELS
-        : db.style.connected
-          ? REELS.slice(0, db.style.reels)
-          : [],
-    )
-  }),
-  http.post('/api/style/connect', async () => {
-    await lag(700, 1200)
-    db.style.connected = true
-    db.style.source = 'instagram'
-    return HttpResponse.json(styleProfile())
-  }),
-  http.post('/api/style/upload', async ({ request }) => {
-    const body = (await request.json()) as { count?: number }
-    await lag(800, 1400)
-    db.style.connected = true
-    db.style.source = 'upload'
-    db.style.reels = Math.max(3, Math.min(REELS.length, body.count ?? 3))
-    return HttpResponse.json(styleProfile())
-  }),
-  http.delete('/api/style/connect', async () => {
-    await lag(200, 400)
-    db.style.connected = false
-    db.style.source = null
-    return HttpResponse.json(styleProfile())
-  }),
+  ...styleHandlers,
 ]

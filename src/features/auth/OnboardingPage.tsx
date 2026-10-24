@@ -100,27 +100,37 @@ export function OnboardingPage() {
   const [language, setLanguage] = useState<Lang>(user?.language ?? 'hinglish')
   const [contentType, setContentType] = useState<ContentType | null>(null)
 
-  const done = () => {
-    finish({ language, contentType })
+  const done = async () => {
+    try {
+      await finish({ language, contentType })
+    } catch (e) {
+      toast({
+        title: 'Could not save your choices',
+        description: e instanceof Error ? e.message : 'Please try again.',
+        tone: 'error',
+      })
+      return
+    }
     navigate('/app', { replace: true })
   }
 
   const doConnect = async () => {
     try {
       await connect.mutateAsync()
-      toast({
-        title: 'Instagram connected',
-        description: `${AI.name} will learn from your recent Reels. This is a simulated connection.`,
-        tone: 'success',
-      })
-      done()
     } catch {
       toast({
         title: 'Could not connect',
         description: 'You can try again later from the Style page.',
         tone: 'error',
       })
+      return
     }
+    toast({
+      title: 'Instagram connected',
+      description: `${AI.name} will learn from your recent Reels. This is a simulated connection.`,
+      tone: 'success',
+    })
+    await done()
   }
 
   const titles = [
