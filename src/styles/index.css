@@ -1,0 +1,789 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   Lypcut design tokens
+   Colour world: deep ink surfaces, saffron accent, soft teal secondary,
+   coral reserved for the cut-line. Dark is default; light via [data-theme].
+   ------------------------------------------------------------------ */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #12151b;
+  --surface-1: #171b22;
+  --surface-2: #1e232c;
+  --surface-3: #272d38;
+  --line: #2b323e;
+  --line-strong: #3a4352;
+
+  --text: #ece9e3;
+  --text-muted: #a0a7b4;
+  --text-faint: #848c9b;
+
+  --saffron: #ffa83a;
+  --saffron-hover: #ffb95c;
+  --saffron-ink: #1a1206; /* text on saffron fills */
+  --saffron-soft: rgb(255 168 58 / 0.14);
+  --accent-text: #ffb95c; /* accent used as text */
+
+  --teal: #5fcdbb;
+  --teal-soft: rgb(95 205 187 / 0.14);
+  --teal-text: #7edccd;
+
+  --coral: #ff6b57; /* the cut-line */
+  --coral-soft: rgb(255 107 87 / 0.14);
+  --coral-text: #ff8f7f;
+
+  --success: #5fcdbb;
+  --danger: #f0627a;
+  --danger-soft: rgb(240 98 122 / 0.14);
+  --danger-text: #ff8da0;
+
+  --glass: rgb(30 35 44 / 0.62);
+  --glass-line: rgb(255 255 255 / 0.07);
+  --scrim: rgb(8 10 14 / 0.62);
+
+  --sh-soft: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 10px 28px -10px rgb(0 0 0 / 0.55);
+  --sh-lift: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 18px 44px -14px rgb(0 0 0 / 0.65);
+  --glow-cut: 0 0 10px rgb(255 107 87 / 0.75), 0 0 28px rgb(255 107 87 / 0.35);
+  --focus-ring: #7edccd;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #eceef2;
+  --surface-1: #ffffff;
+  --surface-2: #f5f6f8;
+  --surface-3: #e8ebf0;
+  --line: #d9dee6;
+  --line-strong: #bcc4d0;
+
+  --text: #151921;
+  --text-muted: #444d5c;
+  --text-faint: #5f6877;
+
+  --saffron: #ffa83a;
+  --saffron-hover: #f79a22;
+  --saffron-ink: #1a1206;
+  --saffron-soft: rgb(255 168 58 / 0.2);
+  --accent-text: #8f4a00;
+
+  --teal: #1f9f8d;
+  --teal-soft: rgb(31 159 141 / 0.13);
+  --teal-text: #0b6b5e;
+
+  --coral: #f0503a;
+  --coral-soft: rgb(240 80 58 / 0.12);
+  --coral-text: #b82f1c;
+
+  --success: #0b6b5e;
+  --danger: #c93450;
+  --danger-soft: rgb(201 52 80 / 0.1);
+  --danger-text: #a3203a;
+
+  --glass: rgb(255 255 255 / 0.7);
+  --glass-line: rgb(21 25 33 / 0.08);
+  --scrim: rgb(21 25 33 / 0.4);
+
+  --sh-soft: 0 1px 2px rgb(21 25 33 / 0.06), 0 10px 26px -12px rgb(21 25 33 / 0.18);
+  --sh-lift: 0 2px 4px rgb(21 25 33 / 0.06), 0 22px 48px -16px rgb(21 25 33 / 0.28);
+  --glow-cut: 0 0 8px rgb(240 80 58 / 0.55), 0 0 22px rgb(240 80 58 / 0.25);
+  --focus-ring: #0b6b5e;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-saffron: var(--saffron);
+  --color-saffron-hover: var(--saffron-hover);
+  --color-saffron-ink: var(--saffron-ink);
+  --color-saffron-soft: var(--saffron-soft);
+  --color-accent: var(--accent-text);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-teal-text: var(--teal-text);
+  --color-coral: var(--coral);
+  --color-coral-soft: var(--coral-soft);
+  --color-coral-text: var(--coral-text);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-text: var(--danger-text);
+  --color-glass: var(--glass);
+
+  --font-sans: 'Inter Variable', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --font-deva: 'Noto Sans Devanagari', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+
+  --shadow-soft: var(--sh-soft);
+  --shadow-lift: var(--sh-lift);
+
+  --animate-leap: leap 280ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+  --animate-slide-in: slide-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade-in: fade-in 180ms ease-out both;
+  --animate-pop-in: pop-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+  --animate-shimmer: shimmer 1.4s linear infinite;
+  --animate-hop: hop 1.1s cubic-bezier(0.45, 0, 0.3, 1) infinite;
+  --animate-blink: blink 4.2s steps(1) infinite;
+}
+
+/* ------------------------------------------------------------------
+   Base
+   ------------------------------------------------------------------ */
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  font-feature-settings:
+    'cv11' 1,
+    'ss03' 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* In the base layer so utility classes (tracking-*, text-nowrap) can override it. */
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+}
+
+::selection {
+  background: var(--saffron);
+  color: var(--saffron-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Devanagari needs more vertical room than Latin. */
+@layer components {
+  .font-deva {
+    font-family: var(--font-deva);
+    line-height: 1.7;
+  }
+}
+:lang(hi) {
+  line-height: 1.7;
+}
+
+/* Timecodes and counters never jitter. */
+@layer components {
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings:
+      'tnum' 1,
+      'zero' 0;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Signature: surfaces, pills, cut-line, leap
+   ------------------------------------------------------------------ */
+
+@layer components {
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-line);
+    backdrop-filter: blur(16px) saturate(1.25);
+    -webkit-backdrop-filter: blur(16px) saturate(1.25);
+    box-shadow: var(--sh-soft);
+  }
+
+  /* A thin glowing line that appears wherever the AI cuts. */
+  .cut-line {
+    background: var(--coral);
+    box-shadow: var(--glow-cut);
+    border-radius: 999px;
+  }
+  .cut-line--v {
+    width: 2px;
+  }
+  .cut-line--h {
+    height: 2px;
+  }
+  .cut-line--flash {
+    animation: cut-flash 520ms ease-out both;
+  }
+
+  /* Primary buttons carry a quick cut-line slice on hover. */
+  .btn-cut {
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-cut::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: -4px;
+    width: 2px;
+    background: var(--coral);
+    box-shadow: var(--glow-cut);
+    opacity: 0;
+    transform: skewX(-14deg);
+    pointer-events: none;
+  }
+  .btn-cut:hover::after {
+    animation: cut-slice 280ms ease-out both;
+  }
+
+  /* Elements that just landed from an AI edit leap, then glow once. */
+  .leap {
+    animation: leap 280ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+  }
+  .landed-glow {
+    animation: landed-glow 900ms ease-out both;
+  }
+}
+
+@keyframes leap {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  35% {
+    transform: translateY(-9px) scale(0.97, 1.05);
+  }
+  72% {
+    transform: translateY(1px) scale(1.03, 0.96);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cut-flash {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+  18% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes cut-slice {
+  0% {
+    left: -4px;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    left: calc(100% + 4px);
+    opacity: 0;
+  }
+}
+
+@keyframes landed-glow {
+  0% {
+    box-shadow:
+      0 0 0 0 rgb(255 168 58 / 0.9),
+      0 0 22px 2px rgb(255 168 58 / 0.55);
+  }
+  100% {
+    box-shadow:
+      0 0 0 6px rgb(255 168 58 / 0),
+      0 0 0 0 rgb(255 168 58 / 0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* The loader: a pill hops over a cut-line. */
+@keyframes hop {
+  0% {
+    transform: translate(-150%, 0) rotate(0deg);
+  }
+  12% {
+    transform: translate(-150%, 0) scale(1.06, 0.92);
+  }
+  50% {
+    transform: translate(0%, -120%) rotate(-14deg);
+  }
+  88% {
+    transform: translate(150%, 0) scale(1.06, 0.92);
+  }
+  100% {
+    transform: translate(150%, 0) rotate(0deg);
+  }
+}
+
+@keyframes blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+
+/* ------------------------------------------------------------------
+   Radix open/close animations (kept under 300ms)
+   ------------------------------------------------------------------ */
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 6px)) scale(0.98);
+  }
+}
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes sheet-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes sheet-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-out-bottom {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------------
+   Utilities
+   ------------------------------------------------------------------ */
+
+@layer components {
+  .skeleton {
+    background-color: var(--surface-2);
+    background-image: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--text) 7%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+}
+
+@layer components {
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* Respect reduced motion everywhere. Loops stop, transitions become instant. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Brand marks
+   ------------------------------------------------------------------ */
+
+/* Logo pieces. Units are the mark's 1290-unit viewBox, so 40px here is ~3% of its height. */
+.mark-piece {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+.mark-glow {
+  filter: drop-shadow(0 0 0.1em rgb(255 168 58 / 0.18));
+}
+.mark-animate .mark-glow {
+  animation: mark-glow 3.2s ease-in-out infinite;
+}
+.mark-animate .mark-piece {
+  animation: mark-hop 3.2s ease-in-out infinite;
+}
+.mark-animate .mark-orb {
+  animation-name: mark-float;
+  animation-duration: 2.6s;
+}
+.mark-animate .mark-gem {
+  animation-delay: 0.15s;
+}
+.mark-animate .mark-drop {
+  animation-delay: 0.3s;
+}
+.mark-animate .mark-slab {
+  animation-delay: 0.45s;
+}
+@keyframes mark-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  22% {
+    transform: translateY(-70px) scale(0.98, 1.03);
+  }
+  38% {
+    transform: translateY(0) scale(1.03, 0.96);
+  }
+  46% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+@keyframes mark-float {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(14px, -60px);
+  }
+}
+@keyframes mark-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0.08em rgb(255 168 58 / 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 0 0.2em rgb(255 168 58 / 0.32));
+  }
+}
+
+.ai-eye {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: blink 4.2s steps(1) infinite;
+}
+.ai-thinking {
+  animation: ai-hop 620ms cubic-bezier(0.3, 0.7, 0.3, 1) infinite;
+}
+@keyframes ai-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  35% {
+    transform: translateY(-3px) scale(0.97, 1.05);
+  }
+  70% {
+    transform: translateY(0.5px) scale(1.04, 0.95);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes preview-bar {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Landing page micro-animations (small, looping, reduced-motion safe)
+   ------------------------------------------------------------------ */
+
+@keyframes usp-cycle {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  34%,
+  86% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+@keyframes usp-dots {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+@keyframes usp-strike {
+  0%,
+  30% {
+    background-size: 0% 2px;
+    opacity: 1;
+  }
+  48%,
+  88% {
+    background-size: 100% 2px;
+    opacity: 0.5;
+  }
+  100% {
+    background-size: 0% 2px;
+    opacity: 1;
+  }
+}
+@keyframes usp-type {
+  0% {
+    width: 0;
+  }
+  45%,
+  100% {
+    width: 100%;
+  }
+}
+@keyframes usp-bar {
+  0%,
+  100% {
+    transform: scaleY(0.55);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes usp-pick {
+  0%,
+  18% {
+    transform: translateY(0);
+  }
+  32%,
+  58% {
+    transform: translateY(2.25rem);
+  }
+  72%,
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes usp-swap-a {
+  0%,
+  42% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  50%,
+  92% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes usp-swap-b {
+  0%,
+  42% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  50%,
+  92% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes usp-word {
+  0%,
+  100% {
+    background: transparent;
+    color: white;
+  }
+  8%,
+  30% {
+    background: var(--saffron);
+    color: var(--saffron-ink);
+  }
+}
+html {
+  scroll-behavior: smooth;
+}
+
+/* Captions: the spoken word pops in, the phrase fades in. Both under 200ms. */
+@keyframes caption-pop {
+  0% {
+    transform: scale(0.82);
+  }
+  60% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes caption-fade {
+  from {
+    opacity: 0;
+    transform: translateY(0.25em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.caption-pop {
+  animation: caption-pop 160ms cubic-bezier(0.3, 0.7, 0.3, 1) both;
+}
+.caption-fade {
+  animation: caption-fade 150ms ease-out both;
+}
