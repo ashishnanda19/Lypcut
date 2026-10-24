@@ -496,3 +496,101 @@ unless it says otherwise; the backend changed in two small ways, noted at the en
 9. **The plan multipliers (5 and 20) are my choice.** The document gives the free number only.
 10. **Whisper transcription speed** is slow on a laptop CPU for long videos and the Processing screen's time estimate is too
     optimistic. A smaller model or greedy decoding would help; not changed in Phase 2.
+
+## Phase 3, step 1: what Meta's documentation says (checked 25 October 2026)
+
+I read Meta's current pages for the Instagram API with Instagram Login (links below). Each item says whether I **confirmed** it on
+an official page, or could **not confirm** it. Anything marked _not confirmed_ has to be tested against a real test account before
+the code depends on it; the Fake client must not hide the difference.
+
+### Login, scopes, tokens
+
+- **Confirmed.** Authorisation is `https://www.instagram.com/oauth/authorize` with `client_id`, `redirect_uri`, `response_type=code`,
+  `scope` and `state`. The code is valid for one hour and single use. It is exchanged with `POST https://api.instagram.com/oauth/access_token`
+  (`client_id`, `client_secret`, `grant_type=authorization_code`, `redirect_uri`, `code`) for a short-lived token (about one hour),
+  then with `GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token` (server side only) for a **60-day** long-lived
+  token. `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token` gives another 60 days, if the token is at
+  least 24 hours old and not yet expired; a token not refreshed within 60 days is dead and cannot be refreshed. Refresh needs
+  `instagram_business_basic`. ([Business Login for Instagram](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/business-login.md),
+  [Refresh Access Token](https://developers.facebook.com/documentation/instagram-platform/reference/refresh_access_token.md))
+- **Confirmed.** The scope names are `instagram_business_basic` and `instagram_business_manage_insights` (the insights page names the
+  second for Instagram Login). The other scopes on the login page publish, comment or message, so they are **never requested**. The old
+  `business_*` names were retired on 27 January 2025. ([Media insights](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media/insights.md))
+- **Confirmed.** Only "Instagram professional accounts" (Business and Creator) are covered. The login page does not describe personal
+  accounts at all.
+- **Not confirmed.** The exact way a _personal_ account fails at login (an error page on Instagram, or an error redirect to our callback),
+  and the exact response of `GET https://graph.instagram.com/me?fields=user_id,username,account_type`. A search result says `account_type`
+  is `BUSINESS` or `MEDIA_CREATOR`, but Meta's IG User page does not list the field. The callback therefore handles all three outcomes
+  (an error redirect, a missing `account_type`, an unexpected value) as `not_professional_account`, and I will confirm the real
+  behaviour with a test account in Step 6.
+- **Not confirmed.** A token-revocation endpoint. I found none, so "revoke or discard" means discard: delete our copy. The user can also
+  remove the app in Instagram's own settings.
+
+### What Reels metrics exist
+
+Official list of metrics for `media_product_type=REELS` ([Instagram Media Insights](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media/insights.md)):
+
+| Need                 | Metric                           | Status                                    |
+| -------------------- | -------------------------------- | ----------------------------------------- |
+| Views                | `views`                          | Available, marked "in development"        |
+| Likes, comments      | `likes`, `comments`              | Available (organic only)                  |
+| Saves                | `saved`                          | Available                                 |
+| Shares               | `shares`                         | Available                                 |
+| Reach                | `reach`                          | Available (estimated)                     |
+| Average watch time   | `ig_reels_avg_watch_time`        | Available. **Seconds, not a percentage**  |
+| Total play time      | `ig_reels_video_view_total_time` | Available, "in development"               |
+| Skipped in first 3 s | `reels_skip_rate`                | Available, "estimated and in development" |
+| Interactions         | `total_interactions`             | Available, "in development"               |
+| Reposts              | `reposts`                        | Available                                 |
+
+Not available for Reels: `impressions`, `follows`, `link_clicks`, `profile_visits` and others. `total_likes`, `total_comments` and `total_views` are Facebook Login
+only. Data can lag by up to 48 hours, and an unavailable metric comes back as an **empty data set, not 0**, so "missing" and "zero" must stay different in our tables.
+
+Consequences:
+
+- **Average watch percentage cannot come from Meta alone.** It needs the Reel's duration, and the media node has **no `video_duration` field**.
+  Duration has to come from the file (probe), or from the person typing it.
+- **Hook retention** has no time series. The closest real number is `reels_skip_rate` (share who left in the first 3 seconds), so
+  `hookRetention` for one Reel is `100 − skip rate`, one value per Reel, and the array stays empty when Meta does not return it.
+  That matches the front end's "average first-3-seconds retention for the last 8 Reels". It is "in development", so it may be absent.
+- **Not confirmed:** whether `media_product_type` (how we would tell a Reel from other video) is returned under Instagram Login. Meta's media page marks it
+  "Facebook Login only". If it is not, Reels are told apart by asking for Reels-only metrics (`ig_reels_avg_watch_time` errors on other media) or by treating `VIDEO` as
+  a Reel. To settle with a test account.
+
+### Fetching the video file
+
+- **Confirmed.** The media node has `media_url` and, for video, `thumbnail_url`. `media_url` can be missing for videos with copyrighted audio or flagged
+  copyright violations, and for Reels whose owner turned off downloads (that rule is stated for reading _other_ people's media). Meta states no expiry for the
+  URLs. ([Instagram Media](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media.md),
+  [IG User Media](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/media.md))
+- **Not confirmed, and this decides the case.** I found nothing on an official page that says an app may, or may not, download the owner's video file from
+  `media_url` to analyse it. Meta's general [Platform Terms](https://developers.facebook.com/terms) require deleting platform data when it is no longer needed,
+  when the person asks, or when Meta requests it, and forbid selling it, re-identifying it and surveillance uses. They say nothing specific about video analysis.
+- **So the case that applies is the cautious one: the Instagram path works from metrics only, and never fetches the file.** A configuration flag
+  (`INSTAGRAM_FETCH_MEDIA`, off) is the only way it would, and it is not to be turned on until you have read the terms (or Meta's reviewer says yes) and decided.
+  What that costs the profile is in the report to you (question 1).
+
+### Rate limits
+
+- **Not confirmed.** Meta's official rate-limit page says Instagram Platform calls are subject to Business Use Case limits and gives a platform formula of 200 × number of users over a rolling
+  hour. Third-party guides quote 200 calls per user per hour, and one quotes 4,800 × impressions per 24 hours. I could not tie either to Instagram Login today. The client therefore
+  (a) reads the `X-App-Usage` and `X-Business-Use-Case-Usage` headers, (b) backs off with jitter on Meta's rate-limit error codes and on 429/5xx, and (c) throttles to a conservative default
+  of a few calls per second per account. A sync of 30 Reels is about 31 calls (one list, plus one insights call per Reel), far inside either number.
+  ([Graph API rate limiting](https://developers.facebook.com/docs/graph-api/overview/rate-limiting/))
+
+### Access levels and review
+
+- **Confirmed.** Apps that serve only a business you own or manage, on Standard Access, do not need App Review. An app that serves other people needs Advanced Access, and
+  "must complete App Review before it can request permissions with Advanced Access". An app uses one login type only. For review Meta asks for: a 1024×1024 icon, a Privacy Policy URL, an app category, a business email,
+  step-by-step test instructions for reviewers (web is the only platform for Instagram Login), a description and an end-to-end screencast for each permission, and at least one
+  successful API call per permission before requesting Advanced Access. ([App Review](https://developers.facebook.com/documentation/instagram-platform/app-review.md))
+- **Not confirmed on the pages I could read:** Business Verification (you told me it is required; I could not find it on these pages, so treat it as required), the data-deletion callback request
+  and response format (see below), how long review takes, and the exact way a role (admin, developer, tester) limits who can connect before approval. The checklist says to verify these in the App Dashboard.
+- **Data deletion callback.** Community reports describe a form-encoded POST with one `signed_request` parameter (`<signature>.<payload>`, base64url, HMAC-SHA256 with the app secret) and a JSON reply with `url` (a status page)
+  and `confirmation_code`. Meta's own page was not retrievable by my tools, so the endpoint is built to that shape and to be checked against Meta's official page in Step 6.
+
+### Decisions that follow
+
+1. The Instagram path never downloads video; style signals (hook timing, cut pace, captions, fonts, colours) come from uploaded files only. See the report to you for how the two paths combine.
+2. Every Meta call sits behind `InstagramClient`; the real client's unconfirmed behaviours (account type, Reel detection, missing metrics) are isolated in it and covered by recorded-response tests, so a surprise is a one-file fix.
+3. A missing metric is `null`, never 0, from the API to the database to the score.
