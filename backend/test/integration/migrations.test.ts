@@ -67,18 +67,21 @@ describe('migrations go up and down cleanly', () => {
 
   it('undoes the newest migration and only that one', async () => {
     const before = await applied()
-    expect(await tables()).toContain('edit_plans')
+    expect(await hasColumn('llm_usage', 'request_id')).toBe(true)
     const undone = await migrateDown(pool, folder, 1)
     expect(undone).toHaveLength(1)
     expect(await applied()).toBe(before - 1)
-    expect(await tables()).not.toContain('edit_plans')
+    expect(await hasColumn('llm_usage', 'request_id')).toBe(false)
     // The ones before it are still there.
+    expect(await tables()).toContain('edit_plans')
     expect(await tables()).toContain('sentence_embeddings')
     expect(await hasColumn('transcripts', 'content_hash')).toBe(true)
     expect(await tables()).toContain('llm_usage')
   })
 
   it('can undo the ones before that too', async () => {
+    await migrateDown(pool, folder, 1)
+    expect(await tables()).not.toContain('edit_plans')
     await migrateDown(pool, folder, 1)
     expect(await tables()).not.toContain('sentence_embeddings')
     expect(await hasColumn('transcripts', 'embeddings_hash')).toBe(false)

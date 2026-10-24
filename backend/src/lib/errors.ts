@@ -13,6 +13,7 @@ export type ErrorCode =
   | 'EMAIL_TAKEN'
   | 'VERSION_CONFLICT'
   | 'INVALID_OP'
+  | 'STALE_PLAN'
   | 'RATE_LIMITED'
   | 'PAYLOAD_TOO_LARGE'
   | 'UNSUPPORTED_MEDIA'

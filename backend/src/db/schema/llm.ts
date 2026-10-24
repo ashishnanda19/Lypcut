@@ -15,6 +15,8 @@ export const llmUsage = pgTable(
     userId: uuid().references(() => users.id, { onDelete: 'cascade' }),
     projectId: uuid().references(() => projects.id, { onDelete: 'cascade' }),
     kind: llmKindEnum().notNull(),
+    /** Groups the calls that belong to one assistant request (a repaired answer is several calls but one request). */
+    requestId: text(),
     /** Which implementation answered: anthropic, fake, local-embeddings ... */
     provider: text().notNull(),
     model: text().notNull(),

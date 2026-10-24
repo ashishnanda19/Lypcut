@@ -201,6 +201,7 @@ export class PlannerService {
   ): Promise<PlannerResult> {
     const { config, llm } = this.deps
     const planId = uuidv7()
+    const requestId = uuidv7()
     const ctx = plannerContext(data, {
       playhead: input.playhead,
       applyStyle: input.applyStyle,
@@ -223,7 +224,7 @@ export class PlannerService {
             maxOutputTokens: config.LLM_MAX_OUTPUT_TOKENS_PLANNER,
             effort: config.LLM_EFFORT_PLANNER,
           },
-          { userId: data.userId, projectId: data.projectId },
+          { userId: data.userId, projectId: data.projectId, requestId },
         )
       } catch (e) {
         const slow =

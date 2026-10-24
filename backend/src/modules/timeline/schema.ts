@@ -62,6 +62,8 @@ export const applyOpsBody = z.object({
   author: authorSchema.default('you'),
   /** The Edit card in the chat that produced this, if any. */
   editId: z.string().max(100).optional(),
+  /** The assistant's plan this edit takes back, when the editor commits a plan's stored inverse. */
+  undoesEditId: z.uuid().optional(),
 })
 
 export const baseVersionBody = z.object({ baseVersion })

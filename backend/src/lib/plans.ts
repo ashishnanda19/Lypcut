@@ -18,6 +18,14 @@ export const PLANS: Record<PlanId, PlanLimits> = {
 }
 
 /**
+ * How many times the configured daily assistant allowance (PLANNER_DAILY_LIMIT) each plan gets. Kept apart from PLANS
+ * because those limits are copied onto each project when it is made; this one is read fresh, so a plan change counts at once.
+ */
+const PLANNER_MULTIPLIER: Record<PlanId, number> = { free: 1, creator: 5, studio: 20 }
+
+export const plannerMultiplier = (plan: PlanId): number => PLANNER_MULTIPLIER[plan]
+
+/**
  * Container timestamps are rarely exact, so a "10 minute" clip can measure 600.04 s. This slack keeps
  * such a file inside a 10 minute limit. Anything meaningfully longer is still refused.
  */

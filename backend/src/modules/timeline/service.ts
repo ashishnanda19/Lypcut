@@ -8,11 +8,13 @@ import {
   timelineVersions,
 } from '../../db/schema/index.js'
 import { AppError, err } from '../../lib/errors.js'
+import { UUID_RE } from '../../lib/ids.js'
 import { requireProject } from '../../lib/ownership.js'
 import { isEmptyPatch, patchBetween } from '@lypcut/timeline-core'
 import { applyOp, OpError, sequentialIds } from '@lypcut/timeline-core'
 import { otioString } from '../../timeline-core/otio.js'
 import type { Timeline, TimelineOp } from '@lypcut/timeline-core'
+import { getPlan, markApplied, markUndone, refreshPlanStatuses } from '../../planner/store.js'
 import type { TimelineState, VersionDto } from './schema.js'
 
 type Db = AppDeps['database']['db']
@@ -29,6 +31,8 @@ export interface CommitInput {
   label: string
   author: 'you' | 'ai'
   editId?: string
+  /** The assistant's plan this edit takes back (the editor commits a plan's stored inverse as a new version). */
+  undoesEditId?: string
 }
 
 const toAuthor = (a: VersionRow['createdBy']): 'you' | 'ai' => (a === 'assistant' ? 'ai' : 'you')
@@ -133,17 +137,47 @@ export class TimelineService {
 
   async applyOps(userId: string, projectId: string, input: CommitInput) {
     await requireProject(this.db, userId, projectId)
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const tl = await this.lockTimeline(tx, projectId)
       this.assertBase(tl, input.baseVersion)
       const base = await this.snapshotOf(tx, tl.id, tl.currentVersion)
       return this.commit(tx, tl, base, input)
     })
+    await this.syncPlans(userId, projectId, input, result.version.n)
+    return result
+  }
+
+  /**
+   * Keeps the assistant's plans in step with the timeline. An edit that carries a plan's id applied that plan; one that says
+   * it undoes a plan took it back; and every plan's status follows where the timeline now stands. This is bookkeeping about
+   * a change that has already been saved, so a failure here is not allowed to fail the request: the statuses are worked out
+   * again whenever plans are listed.
+   */
+  private async syncPlans(
+    userId: string,
+    projectId: string,
+    input: CommitInput | null,
+    version: number | null,
+  ) {
+    try {
+      if (input && version !== null) {
+        if (input.undoesEditId && UUID_RE.test(input.undoesEditId)) {
+          const plan = await getPlan(this.db, userId, projectId, input.undoesEditId)
+          if (plan) await markUndone(this.db, plan.id, version)
+        } else if (input.editId && UUID_RE.test(input.editId)) {
+          const plan = await getPlan(this.db, userId, projectId, input.editId)
+          if (plan) await markApplied(this.db, plan.id, version)
+        }
+      }
+      await refreshPlanStatuses(this.db, projectId)
+    } catch {
+      /* see above */
+    }
   }
 
   async undo(userId: string, projectId: string, baseVersion: number): Promise<TimelineState> {
     await requireProject(this.db, userId, projectId)
-    return this.db.transaction(async (tx) => {
+    const state = await this.db.transaction(async (tx) => {
       const tl = await this.lockTimeline(tx, projectId)
       this.assertBase(tl, baseVersion)
       const [current] = await tx
@@ -163,6 +197,8 @@ export class TimelineService {
       await this.touchProject(tx, projectId)
       return this.stateOf(tx, updated!)
     })
+    await this.syncPlans(userId, projectId, null, null)
+    return state
   }
 
   async redo(userId: string, projectId: string, baseVersion: number): Promise<TimelineState> {
@@ -191,6 +227,7 @@ export class TimelineService {
       return { state: await this.stateOf(tx, updated!) }
     })
     if ('nothing' in result) throw err.conflict('CONFLICT', 'There is nothing to redo.')
+    await this.syncPlans(userId, projectId, null, null)
     return result.state
   }
 
@@ -200,7 +237,7 @@ export class TimelineService {
    */
   async restore(userId: string, projectId: string, baseVersion: number, versionN: number) {
     await requireProject(this.db, userId, projectId)
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const tl = await this.lockTimeline(tx, projectId)
       this.assertBase(tl, baseVersion)
       const [target] = await tx
@@ -219,6 +256,8 @@ export class TimelineService {
         author: 'you',
       })
     })
+    await this.syncPlans(userId, projectId, null, null)
+    return result
   }
 
   /* ------------------------------- OTIO ------------------------------- */

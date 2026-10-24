@@ -8,6 +8,8 @@ import { LlmError, type GenerateRequest, type GenerateResult, type LlmProvider }
 import { recordUsage, spendThisMonth, type LlmKind } from './usage.js'
 
 export interface LlmContext {
+  /** Groups the calls of one assistant request. */
+  requestId?: string
   userId?: string
   projectId?: string
 }

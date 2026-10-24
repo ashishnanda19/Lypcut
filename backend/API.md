@@ -8,7 +8,7 @@ Examples use `$A` for `http://localhost:4000/api` and shorten ids and tokens. Th
 
 - [Conventions](#conventions)
 - [Health](#health) · [Auth](#auth) · [Account](#account) · [Projects](#projects) · [Uploads](#uploads)
-- [Jobs](#jobs) · [Timeline](#timeline) · [Content](#content) · [Search](#search)
+- [Jobs](#jobs) · [Timeline](#timeline) · [Content](#content) · [Search](#search) · [Assistant](#assistant)
 - [Errors](#error-codes)
 
 ## Conventions
@@ -705,6 +705,144 @@ curl -G $A/projects/$PID/search --data-urlencode "q=where I talk about the pitch
 Best first, never overlapping. `relevance` is 40-99, `matched` are word indices, and `from`/`to` are the word range of the
 clip. A query with nothing to look for ("where I talk about the") answers `[]`.
 
+## Assistant
+
+The assistant turns a message (English, Hindi or Hinglish) into an **Edit card**: a plan the editor can preview and apply.
+The model never writes timestamps or raw ops. It picks from a small set of tools by id (sentences `s3`, highlights
+`hl_0`, chapters `ch_1`), the server builds the op, checks it against the same rules as `POST /timeline/ops`, and only
+then saves it. A plan that does not pass is never returned. Nothing here touches the video: it is edits to the timeline.
+
+Music is not offered. Asking for it is answered with a short explanation and no plan.
+
+Each result is a `PlannerResult`: `text` always, and at most one of `plan`, `question`, `action` (`undo` or `redo`, for the
+editor to carry out). `chips` are follow-up suggestions and `open` names a tab to show (`{ "tab": "search", "query": … }`).
+
+### POST /projects/{id}/assistant/messages
+
+```bash
+curl -X POST $A/projects/$PID/assistant/messages -H "$H" -H 'content-type: application/json' \
+  -d '{"text":"filler words hatao","playhead":0,"history":[]}'
+```
+
+`text` is at most 1,000 characters (control characters are stripped). `playhead` is timeline seconds. `history` is the last
+few turns, up to 8, oldest first. `applyStyle` is accepted and ignored until style learning arrives.
+
+```json
+{
+  "text": "3 filler words mile, jaise “um”, “basically,”, “matlab”. Ye raha cleanup. Chaho to pehle preview dekh lo.",
+  "plan": {
+    "id": "01a16ef1-c3ef-7fbc-a676-db6cf5e500f5",
+    "title": "3 filler words hatao",
+    "description": "“um”, “basically,”, “matlab” aur unke aaspaas ke pauses cut honge.",
+    "op": { "type": "batch", "ops": ["…"] },
+    "strip": [{ "kind": "keep", "weight": 16.4 }, { "kind": "cut", "weight": 1.008 }, "…"],
+    "summary": [
+      { "label": "Cuts", "value": "3", "tone": "coral" },
+      { "label": "Saved", "value": "1.2s", "tone": "teal" }
+    ],
+    "focus": 16.4
+  },
+  "chips": ["Trim long pauses", "Add captions"]
+}
+```
+
+`op` is a timeline op the editor can preview with its own engine, on the version the plan was made for. `strip` is the
+before/after bar for the card. A request that needs a choice comes back with a `question` instead:
+
+```json
+{
+  "text": "Happy to. Which part should the Reel come from?",
+  "question": {
+    "id": "q_e2c577dd",
+    "intent": "reel|step=part",
+    "prompt": "Which part?",
+    "options": [
+      {
+        "id": "best",
+        "label": "My best hook",
+        "hint": "Toh basically, sabse pehle ek sawaal… · 73"
+      },
+      { "id": "here", "label": "From where I am now", "hint": "0:00" },
+      { "id": "all", "label": "The whole video" }
+    ]
+  }
+}
+```
+
+Counts against the person's daily allowance (see [`GET /me/usage`](#get-meusage)) when a model call was made for it.
+
+### POST /projects/{id}/assistant/answers
+
+Sends back a tapped option: `{ "question": <the question card as received>, "optionId": "best", "playhead": 0, "history": [] }`.
+The card is checked: an option that is not on it, a duplicate option id, or an `intent` the assistant did not issue is `422`. The
+answer is the next result: another question, or the plan.
+
+### POST /projects/{id}/assistant/reel
+
+Builds a Reel plan from a range, for the "Make a Reel" buttons in Clips and Search. No model is used, so this does not count
+against the allowance.
+
+```bash
+curl -X POST $A/projects/$PID/assistant/reel -H "$H" -H 'content-type: application/json' \
+  -d '{"srcFrom":10,"srcTo":40,"title":"Funding","fast":true,"hookScore":82}'
+```
+
+`srcFrom` and `srcTo` are seconds in the original video. A range that is backwards or outside the video is `422`. `fast`
+(default `true`) also removes fillers and long pauses; `false` leaves the pace alone.
+
+### GET /projects/{id}/plans
+
+The Edit cards made for this project, oldest first, each a plan as above with a `status`: `proposed`, `previewing` (set by
+the editor), `applied` or `undone`. A reload uses this to restore the cards. A plan's status follows the timeline: applying it
+makes it `applied`, undoing that version makes it `undone`, redoing makes it `applied` again.
+
+### POST /projects/{id}/plans/{planId}/apply
+
+```bash
+curl -X POST $A/projects/$PID/plans/$PLAN/apply -H "$H" -H 'content-type: application/json' -d '{"baseVersion":0}'
+```
+
+Applies the plan as a new timeline version by the assistant: `author` is `ai` and `editId` is the plan's id. The answer is the
+same as `POST /timeline/ops`:
+
+```json
+{
+  "version": {
+    "id": "v_1",
+    "n": 1,
+    "parentN": 0,
+    "author": "ai",
+    "label": "3 filler words hatao",
+    "editId": "01a16ef1-c3ef-7fbc-a676-db6cf5e500f5",
+    "current": true,
+    "onBranch": true,
+    "redoable": false
+  },
+  "state": { "version": 1, "…": "…" }
+}
+```
+
+- `baseVersion` is the version the editor is at. If the timeline has moved, this is `409 VERSION_CONFLICT` as usual.
+- If the timeline changed after the plan was made, the plan is checked again against the current timeline. If it still fits it is applied. If it does not, the answer is `409 STALE_PLAN` with `details.planVersion` and `details.currentVersion`: ask the assistant again.
+- A plan that is already applied is `409 CONFLICT`.
+
+To take it back, use `POST /timeline/undo`. To undo it by committing the inverse yourself, send `undoesEditId` (the plan's id) with
+the ops on `POST /timeline/ops`; the plan then reads as `undone`.
+
+### GET /me/usage
+
+```json
+{ "plan": "free", "planner": { "used": 2, "limit": 30, "resetsAt": "2026-10-25T00:00:00.000Z" } }
+```
+
+How much of today's assistant allowance is used. The day is UTC and `resetsAt` is the next midnight. `limit` is
+`PLANNER_DAILY_LIMIT` times the plan's multiplier (free 1, creator 5, studio 20). A request counts once, however many model calls
+it took, and only when a real model was asked: requests the service failed, requests answered by the offline model, and
+`/assistant/reel` do not count.
+
+At the limit, `messages` and `answers` answer `429 RATE_LIMITED` with a `Retry-After` header and `details`
+(`limit`, `used`, `retryAfterSec`, and `resetsAt` or `window: "minute"`). A burst limit (`PLANNER_BURST_PER_MINUTE`, default 10) applies as well.
+
 ## Error codes
 
 | HTTP | `code`                  | Meaning                                                                                                                               |
@@ -717,6 +855,7 @@ clip. A query with nothing to look for ("where I talk about the") answers `[]`.
 | 404  | `NOT_FOUND`             | Does not exist, or belongs to someone else.                                                                                           |
 | 409  | `EMAIL_TAKEN`           | That email already has an account.                                                                                                    |
 | 409  | `VERSION_CONFLICT`      | The timeline changed since `baseVersion`. `details.currentVersion`, `lastVersion`.                                                    |
+| 409  | `STALE_PLAN`            | The timeline changed since the plan was made and the plan no longer fits. `details.planVersion`, `currentVersion`.                    |
 | 409  | `NOT_READY`             | The project is still processing.                                                                                                      |
 | 409  | `CONFLICT`              | The action does not fit the current state: nothing to undo or redo, the upload or job is already finished, restoring what is current. |
 | 410  | `UPLOAD_EXPIRED`        | The 24 hours passed. Start a new upload.                                                                                              |

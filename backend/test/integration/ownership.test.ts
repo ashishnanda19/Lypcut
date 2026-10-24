@@ -123,6 +123,39 @@ const ROUTES: Route[] = [
     method: 'GET',
     url: (i) => `/api/projects/${i.readyId}/search?q=funding`,
   },
+  {
+    name: 'message the assistant',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/assistant/messages`,
+    body: { text: 'filler words hatao' },
+  },
+  {
+    name: 'answer the assistant',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/assistant/answers`,
+    body: {
+      question: {
+        id: 'q1',
+        intent: 'ask',
+        prompt: 'Which part?',
+        options: [{ id: 'a', label: 'A' }],
+      },
+      optionId: 'a',
+    },
+  },
+  {
+    name: 'build a Reel',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/assistant/reel`,
+    body: { srcFrom: 0, srcTo: 10 },
+  },
+  { name: 'list the plans', method: 'GET', url: (i) => `/api/projects/${i.readyId}/plans` },
+  {
+    name: 'apply a plan',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/plans/${i.jobId}/apply`,
+    body: { baseVersion: 0 },
+  },
   { name: 'list the files', method: 'GET', url: (i) => `/api/projects/${i.readyId}/assets` },
   {
     name: 'get a file link',

@@ -51,6 +51,16 @@ export const ROUTE_SUMMARIES: Record<string, string> = {
   'GET /api/projects/:id/search':
     'Find moments by what was said (Roman or Devanagari, typos allowed).',
 
+  'POST /api/projects/:id/assistant/messages':
+    'Send the assistant a message; get text, a question or an Edit card back.',
+  'POST /api/projects/:id/assistant/answers':
+    'Answer a question the assistant asked (the Reel questions, or its own).',
+  'POST /api/projects/:id/assistant/reel':
+    'Build a Reel plan from a range (the Clips and Search buttons).',
+  'GET /api/projects/:id/plans': 'The Edit cards made so far, with where each one stands.',
+  'POST /api/projects/:id/plans/:planId/apply': 'Apply a plan as an assistant-authored version.',
+  'GET /api/me/usage': 'The plan and how much of today’s assistant allowance is used.',
+
   'GET /api/jobs/:id': 'Where a processing job stands (the polling fallback of the live feed).',
   'POST /api/jobs/:id/retry': 'Resume a failed processing job where it stopped.',
 }
@@ -58,9 +68,11 @@ export const ROUTE_SUMMARIES: Record<string, string> = {
 const tagOf = (url: string): string => {
   if (!url.startsWith('/api')) return 'Health'
   if (url.startsWith('/api/auth')) return 'Auth'
+  if (url.startsWith('/api/me/usage')) return 'Assistant'
   if (url.startsWith('/api/me')) return 'Account'
   if (url.startsWith('/api/uploads')) return 'Uploads'
   if (url.startsWith('/api/jobs')) return 'Jobs'
+  if (url.includes('/assistant') || url.includes('/plans')) return 'Assistant'
   if (url.includes('/timeline') || url.includes('/export/')) return 'Timeline'
   if (url.endsWith('/search')) return 'Search'
   if (/\/(transcript|scenes|highlights|chapters|summary|assets)/.test(url)) return 'Content'
@@ -84,6 +96,7 @@ export async function registerDocs(app: FastifyInstance): Promise<void> {
         { name: 'Projects' },
         { name: 'Uploads' },
         { name: 'Timeline' },
+        { name: 'Assistant' },
         { name: 'Content' },
         { name: 'Search' },
         { name: 'Jobs' },
