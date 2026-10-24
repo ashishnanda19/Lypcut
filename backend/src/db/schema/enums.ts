@@ -62,3 +62,5 @@ export const versionAuthorEnum = pgEnum('version_author', ['user', 'assistant'])
 export const usageKindEnum = pgEnum('usage_kind', ['upload', 'video_seconds', 'export'])
 
 export const llmKindEnum = pgEnum('llm_kind', ['planner', 'highlights', 'chapters', 'embed'])
+
+export const planStatusEnum = pgEnum('plan_status', ['proposed', 'previewing', 'applied', 'undone'])

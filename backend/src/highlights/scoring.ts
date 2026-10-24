@@ -4,7 +4,7 @@ import { dataBlock } from '../llm/data-block.js'
 import type { Log } from '../lib/log.js'
 import { reasonFor, titleFrom } from '../transcription/insights.js'
 import type { Candidate } from './candidates.js'
-import { loadPrompt } from './prompts.js'
+import { loadPrompt } from '../llm/prompts.js'
 import { SCORE_HIGHLIGHTS, scoreHighlightsInput } from './tools.js'
 
 export type InsightSource = 'llm' | 'offline' | 'heuristic'

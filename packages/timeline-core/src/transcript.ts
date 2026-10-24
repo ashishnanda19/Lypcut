@@ -121,8 +121,10 @@ export function pauseRanges(
 export function trimPausesOp(
   tl: Timeline,
   words: Word[],
+  minGap = 0.7,
+  keep = 0.3,
 ): { op: TimelineOp; count: number; seconds: number } | null {
-  const ranges = pauseRanges(tl, words);
+  const ranges = pauseRanges(tl, words, minGap, keep);
   if (!ranges.length) return null;
   return {
     op: {

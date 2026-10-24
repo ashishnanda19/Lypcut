@@ -11,6 +11,8 @@ import {
   transcripts,
   transcriptWords,
 } from '../../src/db/schema/index.js'
+import { buildInitialTimeline } from '@lypcut/timeline-core'
+import { eq } from 'drizzle-orm'
 import { findChapters, findHighlights } from '../../src/transcription/insights.js'
 import { fixtureTranscript, LINES } from './transcript-fixture.js'
 import type { Timeline } from '@lypcut/timeline-core'
@@ -34,7 +36,13 @@ export interface ReadyProject {
 export async function readyProject(
   t: TestApp,
   person: Person,
-  opts: { title?: string; fileName?: string; content?: boolean | typeof LINES } = {},
+  opts: {
+    title?: string
+    fileName?: string
+    content?: boolean | typeof LINES
+    /** Make the timeline fit the transcript (same length, scenes in thirds), as the pipeline builds it. */
+    fitTimeline?: boolean
+  } = {},
 ): Promise<ReadyProject> {
   const { db } = t.deps.database
   const sample = sampleTimeline()
@@ -73,7 +81,30 @@ export async function readyProject(
   const content = opts.content
     ? await seedContent(t, project!.id, person.id, opts.content === true ? LINES : opts.content)
     : undefined
-  return { projectId: project!.id, timeline: sample.timeline, words: sample.words, content }
+  let timeline = sample.timeline
+  if (content && opts.fitTimeline) {
+    const fx = content
+    const span = fx.duration / 3
+    timeline = buildInitialTimeline(
+      [0, 1, 2].map((i) => ({
+        id: `s${i}`,
+        label: i === 0 ? 'Intro' : `Scene ${i + 1}`,
+        start: i * span,
+        end: (i + 1) * span,
+      })),
+      fx.duration,
+    )
+    await db
+      .update(timelines)
+      .set({ sourceDuration: fx.duration })
+      .where(eq(timelines.projectId, project!.id))
+    await db
+      .update(timelineVersions)
+      .set({ snapshot: timeline as unknown as Record<string, unknown> })
+      .where(eq(timelineVersions.timelineId, tl!.id))
+    await db.update(projects).set({ durationSec: fx.duration }).where(eq(projects.id, project!.id))
+  }
+  return { projectId: project!.id, timeline, words: sample.words, content }
 }
 
 /**

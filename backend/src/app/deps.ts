@@ -7,6 +7,7 @@ import pino from 'pino'
 import { createEmbeddings, createLlm } from '../llm/index.js'
 import { loggerOptions } from '../lib/logger.js'
 import { fakeChapters, fakeHighlights } from '../highlights/fake.js'
+import { fakePlanner } from '../planner/fake.js'
 import type { AppDeps } from './types.js'
 
 export function createDeps(config: Config): AppDeps {
@@ -20,7 +21,7 @@ export function createDeps(config: Config): AppDeps {
     llm: createLlm(config, {
       db: database.db,
       log: pino(loggerOptions(config, 'llm')),
-      handlers: { highlights: fakeHighlights, chapters: fakeChapters },
+      handlers: { highlights: fakeHighlights, chapters: fakeChapters, planner: fakePlanner },
     }),
     embeddings: createEmbeddings(config, pino(loggerOptions(config, 'llm'))),
   }

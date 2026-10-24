@@ -50,6 +50,7 @@ describe('migrations', () => {
       [
         'assets',
         'chapters',
+        'edit_plans',
         'highlights',
         'job_stages',
         'jobs',
@@ -83,7 +84,7 @@ describe('migrations', () => {
       join information_schema.columns c
         on c.table_name = kcu.table_name and c.column_name = kcu.column_name and c.table_schema = 'public'
       where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = 'public'`)
-    expect(r.rows.length).toBe(21)
+    expect(r.rows.length).toBe(22)
     expect(r.rows.every((x) => x.data_type === 'uuid')).toBe(true)
   })
 

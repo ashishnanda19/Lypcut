@@ -5,7 +5,7 @@ import type { Log } from '../lib/log.js'
 import { chapterTitle } from '../transcription/insights.js'
 import type { CandidateSentence } from './candidates.js'
 import type { InsightSource } from './scoring.js'
-import { loadPrompt } from './prompts.js'
+import { loadPrompt } from '../llm/prompts.js'
 import { TITLE_CHAPTERS, titleChaptersInput } from './tools.js'
 
 /** Three to eight chapters, about one for every two minutes. */
