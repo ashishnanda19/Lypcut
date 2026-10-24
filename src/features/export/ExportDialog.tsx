@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check, Clapperboard, Download, FileCode2, Film, Info } from 'lucide-react'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import { useJob } from '@/api/useJob'
 import { Button } from '@/components/ui/Button'
 import { Dialog, DialogContent } from '@/components/ui/Dialog'
@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { toast } from '@/components/ui/Toast'
 import { useEditorData } from '@/features/editor/data'
 import { headTimeline, useEditor } from '@/features/editor/store'
+import { flushSaves } from '@/features/editor/sync'
+import { isReal } from '@/lib/runtime'
 import { otioString } from '@/lib/timeline/otio'
 import { timelineDuration } from '@/lib/timeline/queries'
 import { formatDuration } from '@/lib/time'
@@ -63,6 +65,32 @@ function estimate(sec: number, factor: number) {
   return s < 60 ? `about ${s} seconds` : `about ${Math.round(s / 60)} min`
 }
 
+/**
+ * Rendering the MP4 is not built yet (a later phase), so against the real backend the progress is a stand-in that
+ * runs in the browser. Everything else on this screen, including the project file, is real.
+ */
+function useStandInJob(): { job: Job | null; start: (ms: number) => void } {
+  const [job, setJob] = useState<Job | null>(null)
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => () => void (timer.current && clearInterval(timer.current)), [])
+  const start = (ms: number) => {
+    const t0 = Date.now()
+    setJob({ id: 'render', kind: 'export', status: 'running', progress: 0, detail: 'Rendering' })
+    timer.current = setInterval(() => {
+      const p = Math.min(100, ((Date.now() - t0) / ms) * 100)
+      if (p >= 100 && timer.current) clearInterval(timer.current)
+      setJob({
+        id: 'render',
+        kind: 'export',
+        status: p >= 100 ? 'done' : 'running',
+        progress: Math.round(p),
+        detail: p >= 100 ? 'Done' : 'Rendering',
+      })
+    }, 150)
+  }
+  return { job, start }
+}
+
 /** Renders the current cut at a chosen size. The render itself is a mock; progress and the job flow are real. */
 function RenderTab({ aspects, label }: { aspects: AspectId[]; label: string }) {
   const { project, videoUrl } = useEditorData()
@@ -73,13 +101,16 @@ function RenderTab({ aspects, label }: { aspects: AspectId[]; label: string }) {
   const [burn, setBurn] = useState(captionsOn)
   const [jobId, setJobId] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
-  const { job } = useJob(jobId)
+  const mock = useJob(isReal ? null : jobId)
+  const standIn = useStandInJob()
+  const job = isReal ? standIn.job : mock.job
   const dur = timelineDuration(tl)
   const q = QUALITY.find((x) => x.value === quality)!
   const size = SIZES.find((s) => s.id === aspect)!
   const busy = starting || (!!job && job.status !== 'done' && job.status !== 'failed')
 
   const start = async () => {
+    if (isReal) return standIn.start(4500 + dur * 18)
     setStarting(true)
     try {
       const j = await api.post<Job>(`/projects/${project.id}/export`, {
@@ -104,7 +135,9 @@ function RenderTab({ aspects, label }: { aspects: AspectId[]; label: string }) {
       save(await res.blob(), `${slug(project.title)}-${aspect.replace(':', 'x')}-DEMO.mp4`)
       toast({
         title: 'Demo file saved',
-        description: 'This is the sample clip, not your edit. Real rendering is not connected yet.',
+        description: isReal
+          ? 'This is the editing copy of your whole video, not your cut. Rendering your edit is coming soon.'
+          : 'This is the sample clip, not your edit. Real rendering is not connected yet.',
         tone: 'info',
       })
     } catch {
@@ -239,11 +272,27 @@ function RenderTab({ aspects, label }: { aspects: AspectId[]; label: string }) {
 function ProjectTab() {
   const { project } = useEditorData()
   const tl = useEditor(headTimeline)
-  const download = () => {
-    save(
-      new Blob([otioString(tl, project.title)], { type: 'application/json' }),
-      `${slug(project.title)}.otio`,
-    )
+  const download = async () => {
+    try {
+      if (isReal) {
+        await flushSaves()
+        // The server writes the file from the saved timeline, with everything needed to read it back exactly.
+        const { blob, filename } = await api.download(`/projects/${project.id}/export/otio`)
+        save(blob, filename ?? `${slug(project.title)}.otio`)
+      } else {
+        save(
+          new Blob([otioString(tl, project.title)], { type: 'application/json' }),
+          `${slug(project.title)}.otio`,
+        )
+      }
+    } catch (e) {
+      toast({
+        title: 'Could not create the project file',
+        description: e instanceof ApiError ? e.message : 'Please try again.',
+        tone: 'error',
+      })
+      return
+    }
     toast({
       title: 'Project file saved',
       description: 'Open it in DaVinci Resolve, Premiere or any OpenTimelineIO app.',
@@ -271,7 +320,7 @@ function ProjectTab() {
         <Button
           variant="primary"
           leading={<Download className="size-4" aria-hidden="true" />}
-          onClick={download}
+          onClick={() => void download()}
         >
           Download
         </Button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -42,6 +42,9 @@ import { TranscriptPanel } from './TranscriptPanel'
 import { useBreakpoint } from './useBreakpoint'
 import { useEditorShortcuts } from './useEditorShortcuts'
 import { uid } from '@/lib/ids'
+import { isReal } from '@/lib/runtime'
+import { closeRemote, openRemote } from './sync'
+import { useVideoUrl } from './videoUrl'
 
 const TABS = [
   { id: 'chat', label: 'Chat', icon: MessageCircle },
@@ -97,6 +100,23 @@ function LeftPanel({ compact }: { compact?: boolean }) {
   )
 }
 
+/** Whether the edit is safely on the server. Only meaningful against the real backend. */
+function SaveStatus() {
+  const state = useEditor((s) => s.saveState)
+  if (!isReal) return null
+  return (
+    <span
+      role="status"
+      className={cn(
+        'hidden shrink-0 text-xs sm:block',
+        state === 'error' ? 'font-semibold text-danger-text' : 'text-faint',
+      )}
+    >
+      {state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : 'Saved'}
+    </span>
+  )
+}
+
 function TopBar({
   project,
   advanced,
@@ -125,6 +145,7 @@ function TopBar({
       <h1 className="min-w-0 flex-1 truncate text-nowrap text-[15px] font-semibold">
         {project.title}
       </h1>
+      <SaveStatus />
       {!compact && (
         <div
           role="radiogroup"
@@ -213,6 +234,10 @@ export default function EditorPage({ project }: { project: Project }) {
   const openedFor = useEditor((s) => s.projectId)
   const shown = useEditor((s) => (s.versions.length ? shownTimeline(s) : null))
 
+  const [openError, setOpenError] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const started = useRef<string | null>(null)
+
   useEffect(() => {
     if (!ready || useEditor.getState().projectId === project.id) return
     const msg = openingMessage(
@@ -220,23 +245,63 @@ export default function EditorPage({ project }: { project: Project }) {
       (user?.language ?? 'hinglish') as Lang,
       project.title,
     )
-    useEditor
-      .getState()
-      .open(project.id, buildInitialTimeline(scenes.data!, project.durationSec), [
-        { id: uid('m'), from: 'ai', text: msg.text, at: Date.now(), fresh: true, chips: msg.chips },
-      ])
-    clock.pause()
-    clock.seek(0)
-  }, [ready, project, scenes.data, user])
+    const opening = [
+      {
+        id: uid('m'),
+        from: 'ai' as const,
+        text: msg.text,
+        at: Date.now(),
+        fresh: true,
+        chips: msg.chips,
+      },
+    ]
+    if (!isReal) {
+      useEditor
+        .getState()
+        .open(project.id, buildInitialTimeline(scenes.data!, project.durationSec), opening)
+      clock.pause()
+      clock.seek(0)
+      return
+    }
+    // Against the real backend the timeline comes from the server, which built it when processing finished.
+    const key = `${project.id}:${attempt}`
+    if (started.current === key) return
+    started.current = key
+    let cancelled = false
+    openRemote(project.id, opening).then(
+      () => {
+        if (cancelled) return
+        clock.pause()
+        clock.seek(0)
+      },
+      () => {
+        if (!cancelled) setOpenError(true)
+      },
+    )
+    return () => {
+      cancelled = true
+      started.current = null
+    }
+  }, [ready, project, scenes.data, user, attempt])
 
   // The clock's length is always the length of what is on screen.
   useEffect(() => {
     if (openedFor === project.id && shown) clock.setDuration(timelineDuration(shown))
   }, [shown, openedFor, project.id])
 
-  useEffect(() => () => clock.pause(), [])
+  useEffect(
+    () => () => {
+      clock.pause()
+      if (isReal) {
+        // Leaving the project: stop saving to it, and reload from the server on the way back in.
+        closeRemote()
+        useEditor.setState({ projectId: null })
+      }
+    },
+    [],
+  )
 
-  const videoUrl = project.assets.find((a) => a.kind === 'proxy')?.url ?? '/demo/proxy.mp4'
+  const videoUrl = useVideoUrl(project)
   const data = useMemo<EditorData | null>(
     () =>
       ready
@@ -252,7 +317,8 @@ export default function EditorPage({ project }: { project: Project }) {
     [ready, project, transcript.data, scenes.data, highlights.data, chapters.data, videoUrl],
   )
 
-  const failed = transcript.isError || scenes.isError || highlights.isError || chapters.isError
+  const failed =
+    openError || transcript.isError || scenes.isError || highlights.isError || chapters.isError
   if (failed) {
     return (
       <div className="grid min-h-dvh place-items-center">
@@ -262,14 +328,16 @@ export default function EditorPage({ project }: { project: Project }) {
           action={
             <Button
               variant="primary"
-              onClick={() =>
+              onClick={() => {
+                setOpenError(false)
+                setAttempt((n) => n + 1)
                 void Promise.all([
                   transcript.refetch(),
                   scenes.refetch(),
                   highlights.refetch(),
                   chapters.refetch(),
                 ])
-              }
+              }}
             >
               Try again
             </Button>

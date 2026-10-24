@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import type { Version } from '@/types'
 import { canRedo, canUndo, useEditor } from './store'
+import { peekOlder, restoreOlder } from './sync'
 
 function Row({
   v,
@@ -19,7 +20,7 @@ function Row({
   onPeek,
   onRestore,
 }: {
-  v: Version
+  v: Pick<Version, 'id' | 'label' | 'author' | 'at'>
   state: 'live' | 'undone' | 'branch'
   current: boolean
   previewing: boolean
@@ -93,9 +94,11 @@ export function HistoryPanel() {
   const versions = useEditor((s) => s.versions)
   const cursor = useEditor((s) => s.cursor)
   const archived = useEditor((s) => s.archived)
+  const older = useEditor((s) => s.older)
   const preview = useEditor((s) => s.preview)
   const compare = useEditor((s) => s.compare)
   const [showArchive, setShowArchive] = useState(false)
+  const [showOlder, setShowOlder] = useState(false)
   const canU = useEditor(canUndo)
   const canR = useEditor(canRedo)
   const store = useEditor.getState
@@ -122,6 +125,63 @@ export function HistoryPanel() {
   }
   const peek = (id: string) =>
     store().peekVersion(preview?.kind === 'version' && preview.id === id ? null : id)
+  const peekSaved = async (n: number) => {
+    if (preview?.kind === 'version' && preview.id === `v_${n}`) return store().peekVersion(null)
+    try {
+      await peekOlder(n)
+    } catch {
+      toast({
+        title: 'Could not open that version',
+        description: 'Please try again.',
+        tone: 'error',
+      })
+    }
+  }
+  const restoreSaved = async (n: number) => {
+    const res = await restoreOlder(n)
+    if (res.ok)
+      toast({
+        title: 'Restored',
+        description: 'Your later versions are still here.',
+        tone: 'success',
+      })
+    else toast({ title: 'Could not restore', description: res.error, tone: 'error' })
+  }
+
+  // Edits saved before this session, or on other branches: fetched from the server when viewed or restored.
+  const olderBlock = older.length > 0 && (
+    <div className="mt-2 border-t border-line pt-3">
+      <button
+        type="button"
+        aria-expanded={showOlder}
+        onClick={() => setShowOlder(!showOlder)}
+        className="flex w-full items-center gap-2 text-sm font-medium text-muted hover:text-text"
+      >
+        <History className="size-4" aria-hidden="true" />
+        Earlier saved edits ({older.length})
+        <ChevronDown
+          className={cn('ml-auto size-4 transition-transform', showOlder && 'rotate-180')}
+          aria-hidden="true"
+        />
+      </button>
+      {showOlder && (
+        <ul className="mt-3">
+          {older.map((o) => (
+            <li key={o.n}>
+              <Row
+                v={{ id: `v_${o.n}`, label: o.label, author: o.author, at: o.at }}
+                state="branch"
+                current={false}
+                previewing={preview?.kind === 'version' && preview.id === `v_${o.n}`}
+                onPeek={() => void peekSaved(o.n)}
+                onRestore={() => void restoreSaved(o.n)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -157,11 +217,14 @@ export function HistoryPanel() {
       />
 
       {versions.length === 1 ? (
-        <EmptyState
-          size="sm"
-          title="Every change lands here"
-          description="Each edit, yours or the AI's, becomes a version. Undo any of them, or go back to how it looked before."
-        />
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+          <EmptyState
+            size="sm"
+            title="Every change lands here"
+            description="Each edit, yours or the AI's, becomes a version. Undo any of them, or go back to how it looked before."
+          />
+          {olderBlock}
+        </div>
       ) : (
         <div
           ref={scroller}
@@ -225,6 +288,7 @@ export function HistoryPanel() {
               )}
             </div>
           )}
+          {olderBlock}
         </div>
       )}
       {preview?.kind === 'version' && (

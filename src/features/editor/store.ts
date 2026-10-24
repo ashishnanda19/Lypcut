@@ -7,7 +7,14 @@ import type {
   TimelineSettings,
   Version,
 } from '@/types'
-import { applyOp, changedItemIds, inverseConflicts, OpError } from '@/lib/timeline/ops'
+import {
+  applyOp,
+  changedItemIds,
+  inverseConflicts,
+  OpError,
+  sequentialIds,
+} from '@/lib/timeline/ops'
+import { onSignOut } from '@/lib/session'
 import { timeAtSource } from '@/lib/timeline/queries'
 
 /**
@@ -54,6 +61,31 @@ export interface CommitMeta {
 
 export type CommitResult = { ok: true; version: Version } | { ok: false; error: string }
 
+export type SaveState = 'idle' | 'saving' | 'error'
+
+/** An edit in the server's history that is not loaded into this session. It can be viewed and restored from the server. */
+export interface OlderVersion {
+  n: number
+  author: 'you' | 'ai'
+  label: string
+  at: number
+}
+
+/**
+ * Saves the session to the server. The store applies every change locally first, so the editor never waits, and
+ * hands it to the syncer, which sends it on in order. Absent against the mock.
+ */
+export interface Syncer {
+  commit: (version: Version, before: Timeline) => void
+  undo: () => void
+  redo: () => void
+}
+
+let syncer: Syncer | null = null
+export function attachSyncer(next: Syncer | null) {
+  syncer = next
+}
+
 interface Persisted {
   versions: Version[]
   cursor: number
@@ -75,6 +107,9 @@ interface EditorState extends Persisted {
   thinking: boolean
   /** Playback is muted by default so a video never starts loud in a quiet room. */
   muted: boolean
+  saveState: SaveState
+  /** Server history that is not in `versions`: other branches and edits from before this session's window. */
+  older: OlderVersion[]
 
   open: (projectId: string, initial: Timeline, opening: ChatMessage[]) => void
   commit: (op: TimelineOp, meta: CommitMeta) => CommitResult
@@ -96,6 +131,21 @@ interface EditorState extends Persisted {
   setThinking: (v: boolean) => void
   setMuted: (v: boolean) => void
   reset: () => void
+  /** Replaces the session with one built from the server. Chat and the edit cards are kept when it is the same project. */
+  load: (projectId: string, data: LoadedSession, opening: ChatMessage[]) => void
+  /** The server answered for a version saved earlier: take its numbering, and its timeline if it differs. */
+  adoptVersion: (id: string, patch: Partial<Pick<Version, 'after' | 'inverse' | 'serverN'>>) => void
+  /** Adds a version the server created (a restore of an older edit) the way a local commit would. */
+  pushRemote: (version: Version) => void
+  setSaveState: (s: SaveState) => void
+  setOlder: (list: OlderVersion[]) => void
+}
+
+export interface LoadedSession {
+  versions: Version[]
+  cursor: number
+  counter: number
+  older: OlderVersion[]
 }
 
 const sessions = new Map<string, Persisted>()
@@ -166,6 +216,8 @@ export const useEditor = create<EditorState>()((set, get) => ({
   landed: NO_LANDING,
   thinking: false,
   muted: true,
+  saveState: 'idle',
+  older: [],
 
   open: (projectId, initial, opening) => {
     const saved = sessions.get(projectId)
@@ -184,7 +236,12 @@ export const useEditor = create<EditorState>()((set, get) => ({
     const base = s.versions[s.cursor]!.after
     let applied
     try {
-      applied = applyOp(base, op)
+      // Against the server the clips an edit creates get the ids the server will give them, so the two agree.
+      applied = applyOp(
+        base,
+        op,
+        syncer ? { newId: sequentialIds(`i_v${s.counter + 1}_`) } : undefined,
+      )
     } catch (e) {
       return {
         ok: false,
@@ -238,17 +295,23 @@ export const useEditor = create<EditorState>()((set, get) => ({
       preview: null,
       landed: { key: counter, added, changed, moved, cuts: cuts.slice(0, MAX_CUTS) },
     })
+    syncer?.commit(version, base)
     return { ok: true, version }
   },
 
   undo: () => {
     const s = get()
-    if (s.cursor > 0) set({ cursor: s.cursor - 1, preview: null, landed: NO_LANDING })
+    if (s.cursor > 0) {
+      set({ cursor: s.cursor - 1, preview: null, landed: NO_LANDING })
+      syncer?.undo()
+    }
   },
   redo: () => {
     const s = get()
-    if (s.cursor < s.versions.length - 1)
+    if (s.cursor < s.versions.length - 1) {
       set({ cursor: s.cursor + 1, preview: null, landed: NO_LANDING })
+      syncer?.redo()
+    }
   },
 
   restore: (versionId) => {
@@ -345,7 +408,55 @@ export const useEditor = create<EditorState>()((set, get) => ({
       query: '',
       ask: null,
       landed: NO_LANDING,
+      saveState: 'idle',
+      older: [],
     }),
+
+  load: (projectId, data, opening) => {
+    const s = get()
+    const kept = s.projectId === projectId ? s : sessions.get(projectId)
+    set({
+      versions: data.versions,
+      cursor: data.cursor,
+      archived: [],
+      edits: kept?.edits ?? {},
+      messages: kept?.messages ?? opening,
+      counter: data.counter,
+      older: data.older,
+      projectId,
+      preview: null,
+      selection: [],
+      landed: NO_LANDING,
+      thinking: false,
+      saveState: 'idle',
+    })
+  },
+
+  adoptVersion: (id, patch) =>
+    set((s) => {
+      const upd = (v: Version) => (v.id === id ? { ...v, ...patch } : v)
+      return { versions: s.versions.map(upd), archived: s.archived.map(upd) }
+    }),
+
+  pushRemote: (version) =>
+    set((s) => {
+      const keep = s.versions.slice(0, s.cursor + 1)
+      const archived =
+        s.cursor < s.versions.length - 1
+          ? [...s.archived, ...s.versions.slice(s.cursor + 1)]
+          : s.archived
+      return {
+        versions: [...keep, version],
+        cursor: keep.length,
+        archived,
+        counter: Math.max(s.counter, version.n),
+        preview: null,
+        landed: NO_LANDING,
+      }
+    }),
+
+  setSaveState: (saveState) => set({ saveState }),
+  setOlder: (older) => set({ older }),
 }))
 
 // Keep each project's session in memory, so leaving the editor and coming back loses nothing.
@@ -364,6 +475,12 @@ useEditor.subscribe((s) => {
 export function clearSession(projectId: string) {
   sessions.delete(projectId)
 }
+
+// Nothing of one person's edit survives them signing out.
+onSignOut(() => {
+  sessions.clear()
+  useEditor.getState().reset()
+})
 
 /* ---------------- selectors ---------------- */
 
