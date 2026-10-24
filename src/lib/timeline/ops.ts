@@ -41,6 +41,18 @@ const COMPATIBLE: Record<ItemKind, TrackKind[]> = {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 const near = (a: number, b: number) => Math.abs(a - b) < 0.02
+const byId = (a: TimelineItem, b: TimelineItem) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+/**
+ * Ids `${prefix}1`, `${prefix}2`, ... The server hands out ids for the clips an edit creates in exactly this way
+ * (prefix `i_v<version>_`), so an edit made here and the same edit made there produce identical timelines.
+ */
+export function sequentialIds(prefix: string): () => string {
+  let n = 0
+  return () => `${prefix}${++n}`
+}
+
+const randomId = () => uid('i')
 
 /* ------------------------------------------------------------------ */
 /* Draft: a mutable scratch copy that records what it touched           */
@@ -52,11 +64,30 @@ class Draft {
   keys = new Set<keyof TimelineSettings>()
   settings: TimelineSettings
   base: Timeline
+  newId: () => string
 
-  constructor(base: Timeline) {
+  constructor(base: Timeline, newId: () => string) {
     this.base = base
     this.items = { ...base.items }
     this.settings = base.settings
+    this.newId = newId
+  }
+
+  /**
+   * Every clip, in a fixed order (by id). Key order is not stable once a timeline has been through storage
+   * (Postgres jsonb reorders keys), and anything that hands out ids as it walks the clips would then hand them out
+   * differently. Walking in id order makes an edit give the same result here and on the server.
+   */
+  all(): TimelineItem[] {
+    return Object.values(this.items).sort(byId)
+  }
+
+  /** An id for a clip an op creates, never one that already belongs to a clip. */
+  freshId(): string {
+    for (;;) {
+      const id = this.newId()
+      if (!this.items[id] && !this.base.items[id]) return id
+    }
   }
 
   /**
@@ -106,7 +137,7 @@ function assertFinite(...nums: number[]) {
 }
 
 function assertNoOverlap(d: Draft, next: TimelineItem) {
-  for (const o of Object.values(d.items)) {
+  for (const o of d.all()) {
     if (o.id === next.id || o.trackId !== next.trackId) continue
     if (next.start < itemEnd(o) - 1e-3 && itemEnd(next) > o.start + 1e-3) {
       throw new OpError("Clips can't overlap on the same track.")
@@ -126,7 +157,9 @@ function doTrim(d: Draft, op: Extract<TimelineOp, { type: 'trim' }>) {
   let next: TimelineItem
   if (op.edge === 'start') {
     const lo = bound ? Math.max(0, it.start - it.srcIn) : 0
-    const to = clamp(op.to, lo, itemEnd(it) - MIN_DUR)
+    // A clip already shorter than the minimum cannot shrink further. Without the max, the upper bound falls
+    // below the lower one and the clip is pushed to a negative start.
+    const to = clamp(op.to, lo, Math.max(lo, itemEnd(it) - MIN_DUR))
     const delta = to - it.start
     next = { ...it, start: to, duration: it.duration - delta, srcIn: it.srcIn + delta }
   } else {
@@ -148,7 +181,7 @@ function doSplit(d: Draft, op: Extract<TimelineOp, { type: 'split' }>) {
   const first: TimelineItem = { ...it, duration: op.at - it.start }
   const second: TimelineItem = {
     ...it,
-    id: op.newId ?? uid('i'),
+    id: op.newId ?? d.freshId(),
     start: op.at,
     duration: itemEnd(it) - op.at,
     srcIn: it.srcIn + (op.at - it.start),
@@ -190,7 +223,7 @@ function doRipple(d: Draft, op: Extract<TimelineOp, { type: 'rippleDelete' }>) {
       (id) => !d.base.tracks.find((t) => t.id === id)?.locked,
     ),
   )
-  for (const it of Object.values(d.items)) {
+  for (const it of d.all()) {
     if (!allowed.has(it.trackId)) continue
     const s = it.start
     const e = itemEnd(it)
@@ -201,7 +234,7 @@ function doRipple(d: Draft, op: Extract<TimelineOp, { type: 'rippleDelete' }>) {
       d.remove(it.id)
     } else if (s < from - EPS && e > to + EPS) {
       d.set({ ...it, duration: from - s })
-      d.set({ ...it, id: uid('i'), start: from, duration: e - to, srcIn: it.srcIn + (to - s) })
+      d.set({ ...it, id: d.freshId(), start: from, duration: e - to, srcIn: it.srcIn + (to - s) })
     } else if (s < from - EPS) {
       d.set({ ...it, duration: from - s })
     } else {
@@ -247,7 +280,7 @@ function insertSource(d: Draft, a: number, b: number, captions?: TimelineItem[])
   }
 
   // Make room: everything at or after `at` moves right, anything straddling it splits.
-  for (const it of Object.values(d.items)) {
+  for (const it of d.all()) {
     if (d.base.tracks.find((t) => t.id === it.trackId)?.locked) continue
     const e = itemEnd(it)
     if (it.start >= at - EPS) d.set({ ...it, start: it.start + len })
@@ -255,7 +288,7 @@ function insertSource(d: Draft, a: number, b: number, captions?: TimelineItem[])
       d.set({ ...it, duration: at - it.start })
       d.set({
         ...it,
-        id: uid('i'),
+        id: d.freshId(),
         start: at + len,
         duration: e - at,
         srcIn: it.srcIn + (at - it.start),
@@ -266,7 +299,7 @@ function insertSource(d: Draft, a: number, b: number, captions?: TimelineItem[])
   const place = (kind: 'video' | 'audio', label: string) => {
     const track = trackByKind(d.timeline, kind)
     if (!track) return
-    const siblings = Object.values(d.items).filter((x) => x.trackId === track.id && x.kind === kind)
+    const siblings = d.all().filter((x) => x.trackId === track.id && x.kind === kind)
     const prev = siblings.find((x) => near(itemEnd(x), at) && near(x.srcIn + x.duration, a))
     const next = siblings.find((x) => near(x.start, at + len) && near(x.srcIn, b))
     if (prev && next) {
@@ -277,7 +310,15 @@ function insertSource(d: Draft, a: number, b: number, captions?: TimelineItem[])
     } else if (next) {
       d.set({ ...next, start: at, srcIn: a, duration: next.duration + len })
     } else {
-      d.set({ id: uid('i'), trackId: track.id, kind, label, start: at, duration: len, srcIn: a })
+      d.set({
+        id: d.freshId(),
+        trackId: track.id,
+        kind,
+        label,
+        start: at,
+        duration: len,
+        srcIn: a,
+      })
     }
   }
   place('video', 'Restored')
@@ -289,7 +330,7 @@ function insertSource(d: Draft, a: number, b: number, captions?: TimelineItem[])
       if (c.srcIn < a - 0.01 || c.srcIn >= b) continue
       d.set({
         ...c,
-        id: uid('i'),
+        id: d.freshId(),
         trackId: capTrack.id,
         start: at + (c.srcIn - a),
         duration: Math.min(c.duration, b - c.srcIn),
@@ -303,7 +344,7 @@ function doAddCaptions(d: Draft, op: Extract<TimelineOp, { type: 'addCaptions' }
   if (!track) throw new OpError('This project has no captions track.')
   assertUnlocked(d.base, track.id)
   if (op.replace) {
-    for (const it of Object.values(d.items)) if (it.trackId === track.id) d.remove(it.id)
+    for (const it of d.all()) if (it.trackId === track.id) d.remove(it.id)
   }
   for (const c of op.items) {
     if (c.kind !== 'caption') throw new OpError('Only captions can go on the captions track.')
@@ -380,9 +421,14 @@ export interface Applied {
   inverse: Extract<TimelineOp, { type: 'patch' }>
 }
 
+export interface ApplyOptions {
+  /** Where ids for clips the op creates come from. Random unless the edit must match the server's. */
+  newId?: () => string
+}
+
 /** Apply an op. Throws OpError (and changes nothing) if it is not valid for this timeline. */
-export function applyOp(tl: Timeline, op: TimelineOp): Applied {
-  const d = new Draft(tl)
+export function applyOp(tl: Timeline, op: TimelineOp, opts: ApplyOptions = {}): Applied {
+  const d = new Draft(tl, opts.newId ?? randomId)
   run(d, op)
   const after = d.timeline
 

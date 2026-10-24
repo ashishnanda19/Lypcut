@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Timeline, TimelineOp } from '@/types'
 import { buildStressTimeline } from './build'
 import { fixture } from './fixtures'
-import { applyOp, inverseConflicts, OpError, validateOp } from './ops'
+import { applyOp, inverseConflicts, OpError, sequentialIds, validateOp } from './ops'
 import {
   coverage,
   cutFlags,
@@ -189,5 +189,56 @@ describe('performance: 500 operations on a 300-clip timeline', () => {
     expect(Object.keys(tl.items).length).toBeGreaterThan(600)
     // about 2ms per op on a slow CI box; the bar is 50ms so the UI never blocks
     expect(total / 500).toBeLessThan(50)
+  })
+})
+
+describe('ids that match the server', () => {
+  const { timeline: tl } = fixture()
+  const first = trackItems(tl, 'trk_video')[0]!
+  const ripple: TimelineOp = { type: 'rippleDelete', from: first.start + 1, to: first.start + 2 }
+
+  it('an edit made with a numbered generator always gives the same clips', () => {
+    const a = applyOp(tl, ripple, { newId: sequentialIds('i_v4_') })
+    const b = applyOp(tl, ripple, { newId: sequentialIds('i_v4_') })
+    expect(items(a.timeline)).toBe(items(b.timeline))
+    expect(Object.keys(a.timeline.items).some((id) => id.startsWith('i_v4_'))).toBe(true)
+  })
+
+  it('does not depend on the order the clips are stored in', () => {
+    const shuffled: Timeline = {
+      ...tl,
+      items: Object.fromEntries(Object.entries(tl.items).reverse()),
+    }
+    const a = applyOp(tl, ripple, { newId: sequentialIds('i_v4_') })
+    const b = applyOp(shuffled, ripple, { newId: sequentialIds('i_v4_') })
+    expect(items(a.timeline)).toBe(items(b.timeline))
+  })
+
+  it('never reuses the id of a clip that exists', () => {
+    const taken = sequentialIds('i_v4_')()
+    const withTaken: Timeline = {
+      ...tl,
+      items: { ...tl.items, [taken]: { ...first, id: taken, start: 9999 } },
+    }
+    const clean = applyOp(tl, ripple, { newId: sequentialIds('i_v4_') })
+    const r = applyOp(withTaken, ripple, { newId: sequentialIds('i_v4_') })
+    // The same clips are created, plus the one that already owned the id. None of them replaced it.
+    expect(Object.keys(r.timeline.items)).toHaveLength(Object.keys(clean.timeline.items).length + 1)
+    expect(r.timeline.items[taken]!.start).toBeCloseTo(9998)
+  })
+})
+
+describe('trimming a clip that is already very short', () => {
+  it('leaves it where it is instead of pushing it before the start of the timeline', () => {
+    const { timeline: tl } = fixture()
+    const clip = trackItems(tl, 'trk_video')[0]!
+    // Make a 0.05 s clip by trimming its end, then try to trim its start.
+    const sliver = applyOp(
+      { ...tl, items: { ...tl.items, [clip.id]: { ...clip, duration: 0.05 } } },
+      { type: 'trim', itemId: clip.id, edge: 'start', to: clip.start - 5 },
+    ).timeline.items[clip.id]!
+    expect(sliver.start).toBeGreaterThanOrEqual(0)
+    expect(sliver.srcIn).toBeGreaterThanOrEqual(0)
+    expect(sliver.duration).toBeGreaterThan(0)
   })
 })
