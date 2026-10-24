@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.env
+.env.local
+*.log
+test/fixtures/*.mp4
+test/fixtures/*.wav
+.DS_Store
+test/fixtures/.cache
+.tools
+models

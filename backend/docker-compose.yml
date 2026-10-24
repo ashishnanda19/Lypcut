@@ -1,0 +1,162 @@
+# Local stack: Postgres, Redis, MinIO (S3), the API and one worker.
+#   docker compose up --build
+# Each service names its own image (same Dockerfile, shared layer cache) so parallel builds do not collide.
+# Host ports are deliberately non-default (5433, 6380) so they do not clash with a Postgres or
+# Redis you already run. Change them with POSTGRES_PORT / REDIS_PORT.
+# The credentials below are local-development defaults only.
+name: lypcut
+
+x-app-env: &app-env
+  NODE_ENV: development
+  HOST: 0.0.0.0
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  DATABASE_URL: postgres://lypcut:lypcut@postgres:5432/lypcut
+  REDIS_URL: redis://redis:6379
+  S3_ENDPOINT: http://minio:9000
+  # Speech recognition. whisper-local needs no account; set TRANSCRIPTION_PROVIDER and a key to use a hosted one.
+  TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-whisper-local}
+  WHISPER_BIN: whisper-cli
+  WHISPER_MODEL_PATH: /models/ggml-${WHISPER_MODEL:-small}.bin
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
+  # What the browser uses for presigned URLs (the host-mapped MinIO port).
+  S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_PORT:-9000}
+  S3_REGION: us-east-1
+  S3_BUCKET: lypcut
+  S3_ACCESS_KEY_ID: lypcut
+  S3_SECRET_ACCESS_KEY: lypcut-local-secret
+  S3_FORCE_PATH_STYLE: 'true'
+  # Local development value only. Real environments set their own (openssl rand -base64 48).
+  AUTH_ACCESS_SECRET: ${AUTH_ACCESS_SECRET:-local-development-secret-change-me-0123456789}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lypcut
+      POSTGRES_PASSWORD: lypcut
+      POSTGRES_DB: lypcut
+    ports: ['${POSTGRES_PORT:-5433}:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lypcut -d lypcut']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports: ['${REDIS_PORT:-6380}:6379']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # MinIO is built from source (see docker/minio/Dockerfile): the official images are discontinued.
+  minio:
+    build: ./docker/minio
+    image: lypcut-minio
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: lypcut
+      MINIO_ROOT_PASSWORD: lypcut-local-secret
+    ports: ['${MINIO_PORT:-9000}:9000', '${MINIO_CONSOLE_PORT:-9001}:9001']
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider http://127.0.0.1:9000/minio/health/live || exit 1']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket, then exits.
+  createbuckets:
+    build: .
+    image: lypcut-tools
+    command: ['node', 'dist/tools/ensure-bucket.js']
+    environment: *app-env
+    depends_on:
+      minio: { condition: service_healthy }
+    restart: 'no'
+
+  # Downloads the Whisper speech model once into a volume (about 465 MB for `small`), then exits.
+  # Choose another with WHISPER_MODEL=tiny|base|small|medium. Bigger hears Hindi better and runs slower.
+  whisper-model:
+    build: .
+    image: lypcut-model
+    command: ['node', 'dist/tools/download-whisper-model.js']
+    environment: *app-env
+    volumes: [models:/models]
+    restart: 'no'
+
+  # Applies database migrations, then exits. The API and worker wait for it.
+  migrate:
+    build: .
+    image: lypcut-migrate
+    command: ['node', 'dist/db/migrate.js']
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    build: .
+    image: lypcut-api
+    environment: *app-env
+    ports: ['${API_PORT:-4000}:4000']
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    stop_grace_period: 15s
+
+  worker:
+    build: .
+    image: lypcut-worker
+    command: ['node', 'dist/worker.js']
+    environment: *app-env
+    # The speech model (downloaded once by whisper-model) is read-only here.
+    volumes: [models:/models:ro]
+    depends_on:
+      whisper-model: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      createbuckets: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4001/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    stop_grace_period: 30s
+
+volumes:
+  models:
+  pgdata:
+  redisdata:
+  miniodata:
