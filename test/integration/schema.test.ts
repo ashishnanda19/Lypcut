@@ -176,17 +176,15 @@ describe('constraints', () => {
     ).toMatch(/scenes_project_idx_uq/)
     expect(
       await rejected(() =>
-        database.db
-          .insert(timelineVersions)
-          .values({
-            timelineId: timeline.id,
-            n: 0,
-            createdBy: 'user',
-            label: 'dup',
-            snapshot: {},
-            op: {},
-            inverse: {},
-          }),
+        database.db.insert(timelineVersions).values({
+          timelineId: timeline.id,
+          n: 0,
+          createdBy: 'user',
+          label: 'dup',
+          snapshot: {},
+          op: {},
+          inverse: {},
+        }),
       ),
     ).toMatch(/timeline_versions_n_uq/)
   })

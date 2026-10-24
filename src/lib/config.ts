@@ -53,6 +53,34 @@ export const envSchema = z
     /** When set (CloudFront later), download URLs are built from it instead of S3. */
     CDN_BASE_URL: optionalUrl,
 
+    /** Signs access tokens (HS256). At least 32 characters; generate with: openssl rand -base64 48 */
+    AUTH_ACCESS_SECRET: z.string().min(32, 'must be at least 32 characters'),
+    ACCESS_TOKEN_TTL_SEC: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(15 * 60),
+    REFRESH_TOKEN_TTL_SEC: z.coerce
+      .number()
+      .int()
+      .min(60)
+      .default(30 * 24 * 3600),
+    /** A just-rotated refresh token reused within this window is a race between tabs, not theft. */
+    REFRESH_REUSE_GRACE_SEC: z.coerce.number().int().min(0).default(10),
+    /** Defaults to true in production. Browsers only send Secure cookies over https. */
+    COOKIE_SECURE: z.stringbool().optional(),
+    COOKIE_DOMAIN: optionalString,
+    /** Per-IP limit on signup, login and refresh, per window. Much stricter than the global limit. */
+    AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(10),
+    /** Failed logins per account before it is locked out for LOGIN_LOCK_SEC. */
+    LOGIN_MAX_FAILURES: z.coerce.number().int().min(1).default(5),
+    LOGIN_LOCK_SEC: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(15 * 60),
+
+    WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })
   .superRefine((env, ctx) => {

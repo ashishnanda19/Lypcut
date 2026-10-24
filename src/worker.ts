@@ -3,6 +3,11 @@ import pino from 'pino'
 import { closeDeps, createDeps } from './app/deps.js'
 import { loadConfigOrExit, onShutdown } from './lib/bootstrap.js'
 import { loggerOptions } from './lib/logger.js'
+import {
+  createMaintenanceWorker,
+  scheduleMaintenance,
+  type WorkerContext,
+} from './workers/maintenance.js'
 
 /**
  * Worker process: consumes BullMQ queues. Stateless, so any number can run side by side.
@@ -33,12 +38,17 @@ const health = http.createServer((req, res) => {
 })
 health.listen(config.WORKER_HEALTH_PORT, config.HOST)
 
+const ctx: WorkerContext = { deps, log }
+const maintenance = createMaintenanceWorker(ctx)
+await scheduleMaintenance(ctx)
+
 log.info({ port: config.WORKER_HEALTH_PORT }, 'worker started')
 
 onShutdown(config.SHUTDOWN_TIMEOUT_MS, async (signal) => {
   log.info({ signal }, 'worker shutting down')
   draining = true
-  // Processors are closed here (letting the current job finish) once they exist.
+  // close() lets a running job finish and stops taking new ones.
+  await maintenance.close()
   await new Promise<void>((resolve) => health.close(() => resolve()))
   await closeDeps(deps)
   log.info('worker shutdown complete')

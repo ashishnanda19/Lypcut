@@ -62,6 +62,12 @@ docker compose up -d postgres redis minio
 npm test
 ```
 
+## Auth in one minute
+
+`POST /api/auth/signup` and `/login` set two httpOnly cookies (access, refresh). `POST /api/auth/refresh` rotates
+them, `POST /api/auth/logout` ends the login, `GET/PATCH/DELETE /api/me` read, update and delete the account. Send
+`X-Auth-Mode: bearer` to get tokens in the response body instead (for scripts and mobile apps).
+
 ## Configuration
 
 Everything comes from environment variables, validated at startup. The process exits with a clear

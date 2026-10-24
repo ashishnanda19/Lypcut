@@ -15,4 +15,7 @@ export const TEST_ENV: Record<string, string> = {
   S3_SECRET_ACCESS_KEY: 'lypcut-local-secret',
   S3_FORCE_PATH_STYLE: 'true',
   CORS_ORIGINS: 'http://localhost:5173',
+  AUTH_ACCESS_SECRET: 'test-secret-test-secret-test-secret-test-secret',
+  // High enough that ordinary tests never trip it; the tests that exercise limits lower it.
+  AUTH_RATE_LIMIT_MAX: '1000',
 }

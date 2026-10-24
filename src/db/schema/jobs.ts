@@ -16,6 +16,9 @@ import { createdAt, pk, timestamps } from './_helpers.js'
 import { projects } from './projects.js'
 import { users } from './users.js'
 
+export type JobType = (typeof jobTypeEnum.enumValues)[number]
+export type JobStatus = (typeof jobStatusEnum.enumValues)[number]
+
 export interface JobFound {
   language?: string
   speakers?: number
