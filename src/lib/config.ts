@@ -123,6 +123,11 @@ export const envSchema = z
     MIN_SCENE_SEC: z.coerce.number().min(0.5).default(1.5),
     MAX_SCENE_SEC: z.coerce.number().min(5).default(60),
 
+    /** How often the live job feed re-reads a watched, unfinished job, in case a Redis message was missed. */
+    JOBS_WS_REFRESH_MS: z.coerce.number().int().min(50).default(3000),
+    /** How often the live feed pings each client, and drops the ones that stopped answering. */
+    JOBS_WS_PING_MS: z.coerce.number().int().min(100).default(30_000),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })

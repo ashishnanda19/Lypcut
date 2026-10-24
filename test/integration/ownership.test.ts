@@ -6,7 +6,7 @@ import { createTestApp, type TestApp } from '../helpers/app.js'
 import { TestClient } from '../helpers/client.js'
 import { resetDatabase } from '../helpers/db.js'
 import { makeVideo } from '../helpers/media.js'
-import { startUpload } from '../helpers/upload.js'
+import { fullUpload, startUpload } from '../helpers/upload.js'
 import { ORIGIN, signup, type Person } from '../helpers/world.js'
 
 /**
@@ -18,7 +18,7 @@ import { ORIGIN, signup, type Person } from '../helpers/world.js'
 let t: TestApp
 let a: Person
 let b: Person
-let theirs: { projectId: string; uploadId: string }
+let theirs: { projectId: string; uploadId: string; jobId: string }
 let video: string
 
 beforeAll(async () => {
@@ -33,7 +33,13 @@ beforeEach(async () => {
   a = await signup(t)
   b = await signup(t)
   const started = await startUpload(b.c, video)
-  theirs = { projectId: started.projectId, uploadId: started.upload.id }
+  // B also has a finished upload, so they have a processing job.
+  const finished = await fullUpload(b.c, video)
+  theirs = {
+    projectId: started.projectId,
+    uploadId: started.upload.id,
+    jobId: finished.done.body.job.id,
+  }
 })
 
 interface Route {
@@ -52,6 +58,8 @@ const ROUTES: Route[] = [
     body: { title: 'Hijacked' },
   },
   { name: 'delete a project', method: 'DELETE', url: (i) => `/api/projects/${i.projectId}` },
+  { name: 'read a job', method: 'GET', url: (i) => `/api/jobs/${i.jobId}` },
+  { name: 'retry a job', method: 'POST', url: (i) => `/api/jobs/${i.jobId}/retry` },
   { name: 'read an upload', method: 'GET', url: (i) => `/api/uploads/${i.uploadId}` },
   {
     name: 'get part URLs for an upload',
@@ -82,6 +90,7 @@ describe('another user’s things', () => {
       const imaginary = await call(a.c, route, {
         projectId: uuidv7(),
         uploadId: uuidv7(),
+        jobId: uuidv7(),
       })
       expect(real.status).toBe(404)
       // The answer is the same as for something that does not exist, so ids cannot be probed.
@@ -109,7 +118,8 @@ describe('another user’s things', () => {
 
   it('never appear in A’s project list', async () => {
     expect((await a.c.get('/api/projects')).body).toEqual([])
-    expect((await b.c.get('/api/projects')).body).toHaveLength(1)
+    // B has two: one with an upload started, one finished.
+    expect((await b.c.get('/api/projects')).body).toHaveLength(2)
   })
 
   it('cannot be reached with a presigned URL meant for B', async () => {

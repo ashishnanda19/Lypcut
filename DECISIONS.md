@@ -177,6 +177,32 @@ Each entry records a choice that was not dictated by the brief, and why.
   downloaded once into a volume by a `whisper-model` service (`WHISPER_MODEL=tiny|base|small|medium`). The first `docker compose
 up` therefore downloads ~465 MB.
 
+## Step 6: live job status
+
+- **WebSocket, because that is what the front end's mock mirrors.** `GET /api/jobs/ws` speaks the front end's protocol:
+  the client sends `{type:'subscribe', jobId}`, the server sends `{type:'job', job}` (and `{type:'error', jobId, message:'Unknown
+job'}` for anything it will not show). `GET /api/jobs/:id` is the polling fallback and returns the identical object. A last
+  message from the feed and a poll made at the same moment are byte-for-byte equal (tested).
+- **Every message is a full snapshot, never a delta.** That is what makes reconnecting trivial and correct: the client
+  subscribes again and is told where things stand, nothing needs replaying, and late, duplicate or out-of-order messages cannot
+  corrupt anything. It is also why there are no event ids. An unchanged state is never sent twice.
+- **Authorised twice.** The handshake is authenticated with the login cookie (a browser WebSocket cannot send an
+  `Authorization` header; a script can use Bearer) and its `Origin` is checked, because cookies make a socket open to
+  cross-site pages otherwise. Then each subscription is checked against job ownership. A stranger's job and a job that does not exist
+  get the same `Unknown job`, so ids cannot be probed. At most 20 jobs per connection.
+- **Delivery path.** The worker writes the job row (the source of truth) and publishes `{jobId}` on a Redis channel. Each API
+  instance holds one Redis subscriber; on a message it reads the row once (bursts of updates are coalesced into one read) and
+  sends the result to whoever is watching that job. Instances share nothing else, so any number can run. A slow timer
+  (`JOBS_WS_REFRESH_MS`, 3 s) re-reads watched, unfinished jobs, so a lost Redis message shows up within seconds (tested by
+  changing a row without announcing it).
+- **Hygiene.** Messages over 4 KB close the connection (1009). Malformed or unknown messages are ignored without a reply,
+  as the mock ignores them (a reply of `type:'error'` would make the client fall back to polling). Dead connections are pinged out
+  every 30 s. Slow clients are skipped rather than buffered for. On shutdown clients get a proper 1001 "going away".
+- **Retry** (`POST /api/jobs/:id/retry`) resumes a failed processing job at the stage that failed and keeps its id. Pressing
+  it twice is safe (a queued or running job just reports where it is); retrying a finished job is a 409.
+- **The mock-only `fail` in a job id** is not a backend feature and is ignored. Real failures arrive through the same event shape
+  as the mock failure: `status: 'failed'`, `step`, `found`, a readable `error`, and "<step> stopped" as `detail`.
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for

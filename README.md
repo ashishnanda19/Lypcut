@@ -99,6 +99,19 @@ The worker runs eight stages per project and reports each on the job (`step`, `d
 
 Each stage is checkpointed and idempotent, so a failed job resumes at the stage that failed.
 
+### Following a job
+
+```
+GET  /api/jobs/:id            current state (polling fallback)
+POST /api/jobs/:id/retry      retry a failed job from the stage that failed
+GET  /api/jobs/ws             WebSocket: send {"type":"subscribe","jobId":"..."}
+                              receive {"type":"job","job":{...}}   (a full snapshot every time)
+                                   or {"type":"error","jobId":"...","message":"Unknown job"}
+```
+
+The socket authenticates with the login cookie and must come from an origin in `CORS_ORIGINS`. After a reconnect, subscribe
+again: the first message is the current state.
+
 ### Speech recognition
 
 `TRANSCRIPTION_PROVIDER` picks the engine: `whisper-local` (default, no account), `openai` or `assemblyai` (needs a key;
