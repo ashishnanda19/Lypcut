@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -112,3 +112,137 @@ export function makeGarbage(bytes = 64 * 1024): string {
 
 export const sha256File = (file: string): string =>
   createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+
+export interface SceneVideoSpec {
+  /** Each segment is a flat colour, so every boundary is an unmistakable picture cut. */
+  segments: Array<{ color: string; seconds: number }>
+  /** Audio: a tone throughout, or tone/silence runs in seconds, for example [['tone',3],['silence',2],['tone',3]]. */
+  audio?: 'tone' | 'none' | Array<['tone' | 'silence', number]>
+  /** Keyframe every this many seconds. */
+  keyframeEverySec?: number
+  fps?: number
+}
+
+/** A video with known picture cuts, known silences and known keyframes, for testing the media code. */
+export async function makeSceneVideo(spec: SceneVideoSpec): Promise<string> {
+  fs.mkdirSync(CACHE_DIR, { recursive: true })
+  const { segments, audio = 'tone', keyframeEverySec = 1, fps = 10 } = spec
+  const key = createHash('sha1')
+    .update(JSON.stringify({ segments, audio, keyframeEverySec, fps }))
+    .digest('hex')
+    .slice(0, 12)
+  const file = path.join(CACHE_DIR, `scenes-${key}.mp4`)
+  if (fs.existsSync(file)) return file
+
+  const total = segments.reduce((s, x) => s + x.seconds, 0)
+  const inputs: string[] = []
+  segments.forEach((s) =>
+    inputs.push('-f', 'lavfi', '-i', `color=c=${s.color}:s=160x90:d=${s.seconds}:r=${fps}`),
+  )
+  const videoGraph = `${segments.map((_, i) => `[${i}:v]`).join('')}concat=n=${segments.length}:v=1:a=0[v]`
+
+  const audioInputs: string[] = []
+  let audioGraph = ''
+  let audioMap: string[] = []
+  if (audio !== 'none') {
+    const runs: Array<['tone' | 'silence', number]> = audio === 'tone' ? [['tone', total]] : audio
+    const base = segments.length
+    runs.forEach(([kind, secs]) =>
+      audioInputs.push(
+        '-f',
+        'lavfi',
+        '-i',
+        kind === 'tone'
+          ? `sine=frequency=440:sample_rate=16000:duration=${secs}`
+          : `anullsrc=r=16000:cl=mono,atrim=duration=${secs}`,
+      ),
+    )
+    audioGraph = `;${runs.map((_, i) => `[${base + i}:a]`).join('')}concat=n=${runs.length}:v=0:a=1[a]`
+    audioMap = ['-map', '[a]', '-c:a', 'aac', '-b:a', '48k']
+  }
+
+  const tmp = `${file}.${process.pid}.tmp.mp4`
+  await ffmpeg([
+    ...inputs,
+    ...audioInputs,
+    '-filter_complex',
+    videoGraph + audioGraph,
+    '-map',
+    '[v]',
+    ...audioMap,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-pix_fmt',
+    'yuv420p',
+    '-force_key_frames',
+    `expr:gte(t,n_forced*${keyframeEverySec})`,
+    '-sc_threshold',
+    '0',
+    '-movflags',
+    '+faststart',
+    tmp,
+  ])
+  fs.renameSync(tmp, file)
+  return file
+}
+
+/**
+ * Real speech from the macOS voices (Lekha speaks Hindi, Aman and Samantha English), as 16 kHz mono WAV.
+ * Returns null where `say` does not exist, so tests that need it can skip.
+ */
+export function makeSpeech(name: string, voice: string, text: string): string | null {
+  if (process.platform !== 'darwin') return null
+  fs.mkdirSync(CACHE_DIR, { recursive: true })
+  const wav = path.join(CACHE_DIR, `speech-${name}.wav`)
+  if (fs.existsSync(wav)) return wav
+  const aiff = path.join(CACHE_DIR, `speech-${name}.aiff`)
+  const said = spawnSync('say', ['-v', voice, '-o', aiff, text])
+  if (said.status !== 0) return null
+  const conv = spawnSync('ffmpeg', [
+    '-v',
+    'error',
+    '-y',
+    '-i',
+    aiff,
+    '-ar',
+    '16000',
+    '-ac',
+    '1',
+    '-c:a',
+    'pcm_s16le',
+    wav,
+  ])
+  fs.rmSync(aiff, { force: true })
+  return conv.status === 0 ? wav : null
+}
+
+/** A video (flat colour) whose soundtrack is the given audio file. */
+export async function makeVideoWithAudio(audioFile: string, name: string): Promise<string> {
+  const file = path.join(CACHE_DIR, `speech-video-${name}.mp4`)
+  if (fs.existsSync(file)) return file
+  await ffmpeg([
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=navy:s=320x180:r=10',
+    '-i',
+    audioFile,
+    '-shortest',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '64k',
+    '-movflags',
+    '+faststart',
+    file,
+  ])
+  return file
+}

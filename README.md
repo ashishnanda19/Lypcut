@@ -82,6 +82,44 @@ DELETE /api/uploads/:id                                           -> abort
 The free plan allows 10 minutes per video and 3 uploads a month (`src/lib/plans.ts`). Over-limit files are
 refused with `LIMIT_VIDEO_LENGTH` or `LIMIT_MONTHLY_UPLOADS` before any processing is paid for.
 
+## What happens after an upload
+
+The worker runs eight stages per project and reports each on the job (`step`, `detail`, `progress`, `found`):
+
+| Stage         | Step                           | What it does                                                          |
+| ------------- | ------------------------------ | --------------------------------------------------------------------- |
+| `probe`       | 1 Splitting into clips         | Streams the original down, hashes it, checks it with ffprobe          |
+| `scenes`      | 1                              | Finds picture cuts and silences, splits long shots, makes thumbnails  |
+| `split_proxy` | 1                              | One clip per scene (stream copy when possible) and one 540p proxy     |
+| `audio`       | 2 Transcribing                 | Mono 16 kHz WAV for speech recognition                                |
+| `transcribe`  | 2                              | Speech to words (both scripts, per-word language, fillers, sentences) |
+| `index`       | 3 Indexing scenes and speakers | Hook candidates, chapters, scene names                                |
+| `timeline`    | 3                              | The first multi-track timeline (version 0)                            |
+| `ready`       | 4 Ready                        | Marks the project ready                                               |
+
+Each stage is checkpointed and idempotent, so a failed job resumes at the stage that failed.
+
+### Speech recognition
+
+`TRANSCRIPTION_PROVIDER` picks the engine: `whisper-local` (default, no account), `openai` or `assemblyai` (needs a key;
+AssemblyAI also separates speakers). Hindi and Hinglish both use the Hindi model.
+
+**Docker** needs nothing: the image builds whisper.cpp and `docker compose up` downloads the model (465 MB for `small`) into a
+volume the first time. Pick a different size with `WHISPER_MODEL=tiny|base|small|medium`.
+
+**On your machine** (running `npm run worker` yourself):
+
+```bash
+git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp .tools/whisper.cpp
+cmake -S .tools/whisper.cpp -B .tools/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build .tools/whisper.cpp/build -j --target whisper-cli
+npm run models:download        # ./models/ggml-small.bin
+# in .env:  WHISPER_BIN=.tools/whisper.cpp/build/bin/whisper-cli
+```
+
+The tests that use real Whisper and real speech (macOS voices) run when those three are present and skip otherwise.
+`npm run fixtures` writes a small sample video to `test/fixtures/sample.mp4`.
+
 ## Configuration
 
 Everything comes from environment variables, validated at startup. The process exits with a clear

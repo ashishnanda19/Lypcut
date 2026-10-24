@@ -21,7 +21,8 @@
     "fixtures": "tsx scripts/make-fixture.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "models:download": "tsx --env-file-if-exists=.env src/tools/download-whisper-model.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",

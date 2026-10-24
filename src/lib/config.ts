@@ -95,6 +95,34 @@ export const envSchema = z
     FFPROBE_BIN: z.string().default('ffprobe'),
     FFMPEG_BIN: z.string().default('ffmpeg'),
 
+    /** Speech recognition engine. whisper-local needs no account; the others are hosted services. */
+    TRANSCRIPTION_PROVIDER: z
+      .enum(['whisper-local', 'openai', 'assemblyai'])
+      .default('whisper-local'),
+    /** whisper.cpp command-line binary (whisper-cli) and its model file. */
+    WHISPER_BIN: z.string().default('whisper-cli'),
+    WHISPER_MODEL_PATH: z.string().default('./models/ggml-small.bin'),
+    WHISPER_THREADS: z.coerce.number().int().min(1).default(4),
+    /** Optional text that primes Whisper, for example a line of Hinglish to bias it towards Roman script. */
+    WHISPER_PROMPT: optionalString,
+    OPENAI_API_KEY: optionalString,
+    OPENAI_BASE_URL: z.string().default('https://api.openai.com/v1'),
+    OPENAI_TRANSCRIBE_MODEL: z.string().default('whisper-1'),
+    ASSEMBLYAI_API_KEY: optionalString,
+    ASSEMBLYAI_BASE_URL: z.string().default('https://api.assemblyai.com'),
+
+    /** How many times a failing job is tried (with growing waits) before it is marked failed and kept as a dead letter. */
+    JOB_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+    /** First wait before a retry; each further retry waits twice as long. */
+    JOB_BACKOFF_MS: z.coerce.number().int().min(0).default(2000),
+    /** Processing jobs at once per worker. Video work is heavy: raise it only with CPU to spare. */
+    PROCESSING_CONCURRENCY: z.coerce.number().int().min(1).default(1),
+    /** FFmpeg's scene-change score (0-1) above which a picture change counts as a cut. Lower finds more. */
+    SCENE_THRESHOLD: z.coerce.number().min(0.05).max(0.95).default(0.3),
+    /** Scenes shorter than this are folded into their neighbour; longer unbroken shots are split at this length. */
+    MIN_SCENE_SEC: z.coerce.number().min(0.5).default(1.5),
+    MAX_SCENE_SEC: z.coerce.number().min(5).default(60),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })
@@ -104,6 +132,18 @@ export const envSchema = z
         code: 'custom',
         path: ['S3_SECRET_ACCESS_KEY'],
         message: 'S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together',
+      })
+    }
+    const needs = {
+      openai: ['OPENAI_API_KEY', env.OPENAI_API_KEY],
+      assemblyai: ['ASSEMBLYAI_API_KEY', env.ASSEMBLYAI_API_KEY],
+    } as const
+    const need = needs[env.TRANSCRIPTION_PROVIDER as keyof typeof needs]
+    if (need && !need[1]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [need[0]],
+        message: `required when TRANSCRIPTION_PROVIDER=${env.TRANSCRIPTION_PROVIDER}`,
       })
     }
     if (env.NODE_ENV === 'production' && env.CORS_ORIGINS.includes('*')) {

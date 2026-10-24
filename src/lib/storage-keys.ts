@@ -16,3 +16,5 @@ export const thumbnailKey = (userId: string, projectId: string, idx: number) =>
   `${projectPrefix(userId, projectId)}thumbs/scene-${String(idx).padStart(4, '0')}.jpg`
 export const exportKey = (userId: string, projectId: string, name: string) =>
   `${projectPrefix(userId, projectId)}exports/${name}`
+export const audioKey = (userId: string, projectId: string) =>
+  `${projectPrefix(userId, projectId)}audio/audio.wav`

@@ -14,6 +14,12 @@ x-app-env: &app-env
   DATABASE_URL: postgres://lypcut:lypcut@postgres:5432/lypcut
   REDIS_URL: redis://redis:6379
   S3_ENDPOINT: http://minio:9000
+  # Speech recognition. whisper-local needs no account; set TRANSCRIPTION_PROVIDER and a key to use a hosted one.
+  TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-whisper-local}
+  WHISPER_BIN: whisper-cli
+  WHISPER_MODEL_PATH: /models/ggml-${WHISPER_MODEL:-small}.bin
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
   # What the browser uses for presigned URLs (the host-mapped MinIO port).
   S3_PUBLIC_ENDPOINT: http://localhost:${MINIO_PORT:-9000}
   S3_REGION: us-east-1
@@ -76,6 +82,16 @@ services:
       minio: { condition: service_healthy }
     restart: 'no'
 
+  # Downloads the Whisper speech model once into a volume (about 465 MB for `small`), then exits.
+  # Choose another with WHISPER_MODEL=tiny|base|small|medium. Bigger hears Hindi better and runs slower.
+  whisper-model:
+    build: .
+    image: lypcut-model
+    command: ['node', 'dist/tools/download-whisper-model.js']
+    environment: *app-env
+    volumes: [models:/models]
+    restart: 'no'
+
   # Applies database migrations, then exits. The API and worker wait for it.
   migrate:
     build: .
@@ -116,7 +132,10 @@ services:
     image: lypcut-worker
     command: ['node', 'dist/worker.js']
     environment: *app-env
+    # The speech model (downloaded once by whisper-model) is read-only here.
+    volumes: [models:/models:ro]
     depends_on:
+      whisper-model: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
@@ -137,6 +156,7 @@ services:
     stop_grace_period: 30s
 
 volumes:
+  models:
   pgdata:
   redisdata:
   miniodata:

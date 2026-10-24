@@ -19,12 +19,14 @@ export interface JobData {
  * Retries with exponential backoff. Failed jobs are kept (removeOnFail: false), which is the
  * dead-letter path: they stay inspectable in Redis and in the `jobs` table.
  */
-export const DEFAULT_JOB_OPTIONS: JobsOptions = {
-  attempts: 5,
-  backoff: { type: 'exponential', delay: 2_000 },
+export const jobOptions = (
+  config: Pick<Config, 'JOB_ATTEMPTS' | 'JOB_BACKOFF_MS'>,
+): JobsOptions => ({
+  attempts: config.JOB_ATTEMPTS,
+  backoff: { type: 'exponential', delay: config.JOB_BACKOFF_MS },
   removeOnComplete: { age: 3_600, count: 1_000 },
   removeOnFail: false,
-}
+})
 
 export interface Queues {
   processing: Queue<JobData>
@@ -32,11 +34,13 @@ export interface Queues {
   close(): Promise<void>
 }
 
-export function createQueues(config: Pick<Config, 'REDIS_URL'>): Queues {
+export function createQueues(
+  config: Pick<Config, 'REDIS_URL' | 'JOB_ATTEMPTS' | 'JOB_BACKOFF_MS'>,
+): Queues {
   const connection = createRedis(config, bullConnectionOptions)
   connection.on('error', () => undefined)
   const make = (name: QueueName) =>
-    new Queue<JobData>(name, { connection, defaultJobOptions: DEFAULT_JOB_OPTIONS })
+    new Queue<JobData>(name, { connection, defaultJobOptions: jobOptions(config) })
   const processing = make(QUEUES.processing)
   const maintenance = make(QUEUES.maintenance)
   return {

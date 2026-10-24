@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const langSchema = z.enum(['hi', 'hinglish', 'en'])
+export type Lang = z.infer<typeof langSchema>
 export const contentTypeSchema = z.enum(['youtuber', 'business', 'clipper'])
 
 /** The front end's `User` type (src/types/index.ts). */

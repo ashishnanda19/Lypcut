@@ -114,6 +114,69 @@ Each entry records a choice that was not dictated by the brief, and why.
   anything that still slips through (a crash), production buckets should also carry an S3 lifecycle rule
   `AbortIncompleteMultipartUpload` after 2 days; noted in the AWS mapping.
 
+## Step 5: the processing pipeline
+
+- **Eight stages, five steps.** The front end's Processing screen has five steps; the pipeline has eight stages that map
+  onto them: `probe`, `scenes`, `split_proxy` (step 1, "Splitting into clips"), `audio`, `transcribe` (step 2),
+  `index`, `timeline` (step 3), `ready` (step 4). Each owns a slice of the 0-100 bar. The job carries the exact step
+  labels, `found` (scenes, language, speakers, hooks) and the failure shape the mock used, so the screen needs no change.
+- **Silences are found with the scenes**, not in the index stage, because splitting a long unbroken shot needs to know
+  where the pauses are. A talking head has no picture cuts at all, so without this a 10 minute podcast would be one clip.
+  `MAX_SCENE_SEC` (default 60) splits at the middle of a nearby pause, else evenly.
+- **Resumable by construction.** Every stage records its result in `job_stages` when it finishes and is idempotent (it
+  replaces whatever an earlier try left, in one transaction). A retry, by the queue or by the user, skips finished
+  stages and resumes at the one that failed; a worker crash costs at most one stage. `POST /jobs/:id/retry` (Step 6)
+  uses `requeueProcessingJob`, which keeps the job id as the front end expects. Tested by checking that earlier stages are
+  not started again (timestamps unchanged).
+- **Failures are classified.** A `PermanentError` (no audio, damaged file, a provider that refuses) goes to the queue as
+  unrecoverable and is never retried. Everything else is retried with exponential backoff (`JOB_ATTEMPTS`, default 5;
+  `JOB_BACKOFF_MS`, default 2 s). A job out of attempts is marked `failed` and the queue keeps it (`removeOnFail: false`):
+  that is the dead-letter path, inspectable in Redis and in the `jobs`/`job_stages` rows. The user sees plain words;
+  the technical reason (and never an API key) stays in the log and the stage row.
+- **The mock's failure, for real.** A video with no audio track fails at step 2 with "We couldn't read a clear audio
+  track from this file." and detail "Transcribing stopped", the same words and shape as the mock.
+- **Cancellation.** Deleting a project withdraws its queued job; a running one is stopped within about 3 seconds (a
+  watcher aborts an `AbortSignal` that kills the FFmpeg or Whisper child process). Nothing is written back, and the
+  project does not reappear.
+- **Memory-safe and disk-light.** Downloads and uploads are streams (hashing on the way down). FFmpeg and Whisper are child
+  processes. Each scene clip is uploaded and deleted straight away, so a job's disk use is about the original plus one clip.
+  The work directory sits under `TMP_DIR` only and is removed however the job ends.
+- **Stream copy where possible.** A scene clip is copied without re-encoding when its start is on a keyframe (within 40 ms),
+  and re-encoded only otherwise. The proxy is at most 540p H.264 with a keyframe every second, plus the voice track. No HLS/DASH.
+  Scene clips are stored but the editor plays only the proxy in Phase 1; they exist for rendering later.
+- **Transcription behind an interface.** `whisper-local` (whisper.cpp, no account), `openai` and `assemblyai`, chosen by
+  `TRANSCRIPTION_PROVIDER`; the app refuses to start without the chosen provider's key. Hindi and Hinglish both use the
+  Hindi model, because none is made for Hinglish. Only AssemblyAI separates speakers; local Whisper and OpenAI give one.
+  Hosted providers' errors are classified retryable (network, 429, 5xx) or not (bad key, 4xx), and a reply with neither word
+  nor segment list is an error, not an empty transcript (so speech is never silently lost).
+- **What was said is stored as heard.** Each word keeps both spellings: `text` (Roman) and `dev` (Devanagari), whichever
+  the recogniser gave being the original and the other derived. Each word is marked `hi` or `en` (so a mixed sentence
+  renders correctly), fillers are flagged, sentences found, and `dev` is only filled where we know the spelling.
+- **Hinglish engine = lexicon + rules, deliberately best-effort.** `src/transcription/lexicon.ts` lists ~300 Hindi words and
+  ~200 English loanwords in both scripts (so फंडिंग is "funding", not "phanding"); everything else goes through rule-based
+  Devanagari to Roman (schwa deletion, conjuncts, nukta), which reads like Hinglish typing (`samajhna`, `larki`). **The reverse,
+  Roman to Devanagari, is lexicon-only**: rule-based guesses ("kitab" could be किताब or कितब) were wrong often enough that a
+  wrong spelling was worse than none, so unknown Roman words stay Roman in Devanagari mode. A language-model pass can fill
+  those gaps in Phase 2. Words like "the" (थे) and "is" (इस) are Hindi in the lexicon and English in life; they take the
+  language of their neighbours instead of voting.
+- **Search form folds spelling variants.** Roman Hinglish has no fixed spelling and Whisper adds its own: real output for
+  "funding" was `phunding`. `norm` (what is stored and what a query will be folded with, in Step 8) folds ph/f, long and
+  short vowels, doubled letters and digraphs, w/v, z/j and c/k, and nothing more; pg_trgm covers what is spelled further apart.
+- **Hooks and chapters are heuristics.** Question openers, numbers, strong-claim words, pace, fillers and a clean start score
+  a window; non-overlapping best ones are kept, with a one-line reason. Chapters break at pauses after a minimum length.
+  Scenes are named after the chapter they start in, as the editor's samples are. An LLM can replace the scoring later; the
+  output fields do not change.
+- **The first timeline** is the editor's own layout (video, B-roll, voice, captions, plus two advanced tracks), one video and one
+  voice clip per scene, captions empty on purpose, as version 0 "Original upload". **B-roll starts empty**: the mock invented four
+  placeholder clips with no footage behind them, and a clip that plays nothing is a lie.
+- **Verified with real speech.** `whisper.cpp` v1.9.5 and the `small` model were run on speech synthesised with macOS voices
+  (Hindi, Indian English, a Hinglish mix): word timings, Devanagari output and the whole pipeline work, on the laptop and in Docker.
+  Those tests skip themselves where the binary, model or voices are missing. Synthetic speech is easier than real speech in
+  some ways and harder in others; real creator audio should be tried before launch, and `medium` considered for Hindi.
+- **Docker.** whisper.cpp is built from source in a build stage (`GGML_NATIVE=OFF`, portable across CPUs); the model is
+  downloaded once into a volume by a `whisper-model` service (`WHISPER_MODEL=tiny|base|small|medium`). The first `docker compose
+up` therefore downloads ~465 MB.
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for
