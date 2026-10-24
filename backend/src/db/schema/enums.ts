@@ -60,3 +60,5 @@ export const stageStatusEnum = pgEnum('stage_status', [
 export const versionAuthorEnum = pgEnum('version_author', ['user', 'assistant'])
 
 export const usageKindEnum = pgEnum('usage_kind', ['upload', 'video_seconds', 'export'])
+
+export const llmKindEnum = pgEnum('llm_kind', ['planner', 'highlights', 'chapters', 'embed'])

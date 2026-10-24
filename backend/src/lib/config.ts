@@ -128,6 +128,38 @@ export const envSchema = z
     /** How often the live feed pings each client, and drops the ones that stopped answering. */
     JOBS_WS_PING_MS: z.coerce.number().int().min(100).default(30_000),
 
+    /**
+     * The language model behind the assistant, highlights and chapters. `auto` uses Anthropic's Claude when
+     * ANTHROPIC_API_KEY is set and the built-in offline model otherwise, so the whole product runs with no keys.
+     */
+    LLM_PROVIDER: z.enum(['auto', 'anthropic', 'fake']).default('auto'),
+    ANTHROPIC_API_KEY: optionalString,
+    ANTHROPIC_BASE_URL: optionalString,
+    /** Chat planning, and the cheaper model for the bulk work (highlights and chapters). */
+    LLM_MODEL_PLANNER: z.string().default('claude-sonnet-5-5'),
+    LLM_MODEL_BATCH: z.string().default('claude-haiku-5-5'),
+    /** `low` keeps planning fast. Claude's newer models do not accept a temperature, so effort is the lever. */
+    LLM_EFFORT_PLANNER: z.enum(['low', 'medium', 'high']).default('low'),
+    LLM_EFFORT_BATCH: z.enum(['low', 'medium', 'high']).default('low'),
+    /** Ask the model API to guarantee tool arguments match their schema. Off by default: every call is checked here anyway. */
+    LLM_STRICT_TOOLS: z.stringbool().default(false),
+    LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
+    /** Retries after a timeout, rate limit or server error, with jittered exponential backoff. */
+    LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+    LLM_RETRY_BASE_MS: z.coerce.number().int().min(0).default(500),
+    /** Per-call budgets: refuse a request that is too big, and cap what the model may write back. */
+    LLM_MAX_INPUT_TOKENS: z.coerce.number().int().min(1000).default(60_000),
+    LLM_MAX_OUTPUT_TOKENS_PLANNER: z.coerce.number().int().min(100).default(2000),
+    LLM_MAX_OUTPUT_TOKENS_BATCH: z.coerce.number().int().min(100).default(6000),
+    /** Spend ceiling for a calendar month (UTC), in US dollars, across everyone. 0 = no ceiling. At the ceiling the offline model takes over. */
+    LLM_MONTHLY_BUDGET_USD: z.coerce.number().min(0).default(0),
+    /** After this many provider failures in a row the offline model takes over for LLM_BREAKER_COOLDOWN_SEC. */
+    LLM_BREAKER_FAILURES: z.coerce.number().int().min(1).default(5),
+    LLM_BREAKER_COOLDOWN_SEC: z.coerce.number().int().min(1).default(60),
+    /** Assistant limits per user: planner requests a day and a minute. */
+    PLANNER_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
+    PLANNER_BURST_PER_MINUTE: z.coerce.number().int().min(1).default(10),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })
@@ -162,6 +194,14 @@ export const envSchema = z
         path: ['AUTH_ACCESS_SECRET'],
         message:
           'this is the development example; generate a real one with: openssl rand -base64 48',
+      })
+    }
+    if (env.LLM_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ANTHROPIC_API_KEY'],
+        message:
+          'required when LLM_PROVIDER=anthropic (use auto to fall back to the offline model without a key)',
       })
     }
     if (env.NODE_ENV === 'production' && env.CORS_ORIGINS.includes('*')) {

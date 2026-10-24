@@ -3,15 +3,21 @@ import { createDatabase } from '../db/client.js'
 import { createRedis } from '../queue/connection.js'
 import { createQueues } from '../queue/queues.js'
 import { Storage } from '../lib/storage.js'
+import pino from 'pino'
+import { createEmbeddingFallback, createLlm } from '../llm/index.js'
+import { loggerOptions } from '../lib/logger.js'
 import type { AppDeps } from './types.js'
 
 export function createDeps(config: Config): AppDeps {
+  const database = createDatabase(config)
   return {
     config,
-    database: createDatabase(config),
+    database,
     redis: createRedis(config, { maxRetriesPerRequest: 2 }),
     storage: new Storage(config),
     queues: createQueues(config),
+    llm: createLlm(config, { db: database.db, log: pino(loggerOptions(config, 'llm')) }),
+    embeddings: createEmbeddingFallback(),
   }
 }
 

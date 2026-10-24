@@ -18,6 +18,7 @@ import {
   transcripts,
   uploads,
   usageEvents,
+  llmUsage,
   userPreferences,
   users,
 } from '../../src/db/schema/index.js'
@@ -173,6 +174,14 @@ export async function makeFullProject(database: Database, ownerId: string) {
   await db
     .insert(usageEvents)
     .values({ userId: ownerId, kind: 'upload', amount: 1, projectId: project.id })
+  await db.insert(llmUsage).values({
+    userId: ownerId,
+    projectId: project.id,
+    kind: 'planner',
+    provider: 'fake',
+    model: 'fake',
+    outcome: 'ok',
+  })
   await db.insert(sessions).values({
     userId: ownerId,
     tokenHash: uuidv7(),

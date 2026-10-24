@@ -53,6 +53,7 @@ describe('migrations', () => {
         'highlights',
         'job_stages',
         'jobs',
+        'llm_usage',
         'projects',
         'scenes',
         'sessions',
@@ -81,7 +82,7 @@ describe('migrations', () => {
       join information_schema.columns c
         on c.table_name = kcu.table_name and c.column_name = kcu.column_name and c.table_schema = 'public'
       where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = 'public'`)
-    expect(r.rows.length).toBe(19)
+    expect(r.rows.length).toBe(20)
     expect(r.rows.every((x) => x.data_type === 'uuid')).toBe(true)
   })
 
@@ -233,6 +234,7 @@ describe('deletion', () => {
       'timeline_ops',
       'jobs',
       'job_stages',
+      'llm_usage',
     ]) {
       expect(await rows(t), t).toBe(0)
     }
@@ -267,6 +269,7 @@ describe('deletion', () => {
       'jobs',
       'job_stages',
       'usage_events',
+      'llm_usage',
       'sessions',
       'user_preferences',
       'users',
