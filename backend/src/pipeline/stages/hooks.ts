@@ -16,7 +16,7 @@ import { PermanentError } from '../errors.js'
 export const hooks: Stage = {
   key: 'hooks',
   step: 3,
-  from: 80,
+  from: 84,
   to: 88,
   async run(ctx) {
     const { db } = ctx.deps.database

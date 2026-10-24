@@ -21,7 +21,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**', 'src/db/migrate.ts', 'src/db/migrate-down.ts', 'src/db/seed.ts', 'src/tools/**'],
+    files: [
+      'scripts/**',
+      'src/db/migrate.ts',
+      'src/db/migrate-down.ts',
+      'src/db/seed.ts',
+      'src/tools/**',
+    ],
     rules: { 'no-console': 'off' },
   },
 )

@@ -24,6 +24,7 @@ export class FakeEmbeddingProvider implements EmbeddingProvider {
   readonly name = 'fake'
   readonly model = 'hashed-words'
   readonly dimensions = FAKE_DIMENSIONS
+  readonly similarityFloor = 0.3
 
   async embed(texts: string[], _kind: EmbeddingKind): Promise<number[][]> {
     return texts.map((t) => this.one(t))

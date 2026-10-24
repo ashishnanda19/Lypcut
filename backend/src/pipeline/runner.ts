@@ -10,6 +10,7 @@ import { GENERIC_FAILURE, PermanentError } from './errors.js'
 import { Reporter } from './reporter.js'
 import { audio } from './stages/audio.js'
 import { chaptersStage } from './stages/chapters.js'
+import { embed } from './stages/embed.js'
 import { hooks } from './stages/hooks.js'
 import { indexStage } from './stages/index-stage.js'
 import { probe } from './stages/probe.js'
@@ -30,6 +31,7 @@ export const STAGES: Stage[] = [
   splitProxy,
   audio,
   transcribe,
+  embed,
   hooks,
   chaptersStage,
   indexStage,

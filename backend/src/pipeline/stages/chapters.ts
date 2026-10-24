@@ -7,6 +7,7 @@ import {
   titleChapters,
 } from '../../highlights/chapters.js'
 import { insightsKey, loadInsightInput } from '../../highlights/input.js'
+import { loadWindowVectors } from '../../modules/search/semantic.js'
 import { languageLabel, type Stage } from '../context.js'
 import { PermanentError } from '../errors.js'
 
@@ -37,7 +38,28 @@ export const chaptersStage: Stage = {
       return { cached: true, chapters: rows.length }
     }
 
-    const vectors = await embedSentences(embeddings, input.sentences)
+    // The vectors made for search double as each sentence's place in the topic: reuse them, and only embed again if they
+    // are missing (the embedding stage was skipped).
+    const stored = await loadWindowVectors(
+      db,
+      input.transcriptId,
+      embeddings.model,
+      input.sentences.length,
+    )
+    let vectors = stored
+    if (!vectors) {
+      try {
+        vectors = await embedSentences(embeddings, input.sentences)
+      } catch (e) {
+        // No way to tell topics apart: every sentence looks alike, so chapters fall where speech pauses, the speaker changes
+        // or the picture cuts. Still 3 to 8 sensible chapters, and the project does not wait on the embedding service.
+        ctx.log.warn(
+          { projectId: ctx.project.id, error: e instanceof Error ? e.name : 'unknown' },
+          'could not embed sentences for chapters; using pauses and cuts',
+        )
+        vectors = input.sentences.map(() => [1])
+      }
+    }
     ctx.progress(0.4)
     const starts = chapterStarts({
       sentences: input.sentences,

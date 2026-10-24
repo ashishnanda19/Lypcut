@@ -393,6 +393,7 @@ describe('when things go wrong', () => {
       split_proxy: 1,
       audio: 1,
       transcribe: 2,
+      embed: 1,
       hooks: 1,
       chapters: 1,
       index: 1,

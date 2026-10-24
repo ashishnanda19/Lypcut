@@ -2,7 +2,9 @@ import type { Config } from '../lib/config.js'
 import type { Log } from '../lib/log.js'
 import type { Database } from '../db/client.js'
 import { AnthropicProvider } from './anthropic.js'
-import { FakeEmbeddingProvider } from './fake-embedding.js'
+import { FAKE_DIMENSIONS, FakeEmbeddingProvider } from './fake-embedding.js'
+import { HostedEmbeddingProvider } from './hosted-embedding.js'
+import { hasModel, TransformersEmbeddingProvider } from './transformers-embedding.js'
 import { FakeProvider, type FakeHandler } from './fake.js'
 import { Llm } from './service.js'
 import type { EmbeddingProvider, GenerateRequest } from './types.js'
@@ -25,6 +27,17 @@ export { FakeProvider } from './fake.js'
 export type { FakeAnswer, FakeHandler } from './fake.js'
 export { FakeEmbeddingProvider } from './fake-embedding.js'
 export { estimateCostUsd, estimateTokens } from './pricing.js'
+
+export type EmbeddingConfig = Pick<
+  Config,
+  | 'EMBEDDING_PROVIDER'
+  | 'EMBEDDING_MODEL'
+  | 'EMBEDDING_MODEL_DIR'
+  | 'EMBEDDING_API_URL'
+  | 'EMBEDDING_API_KEY'
+  | 'EMBEDDING_API_MODEL'
+  | 'EMBEDDING_SIMILARITY_FLOOR'
+>
 
 export type LlmConfig = Pick<
   Config,
@@ -78,7 +91,43 @@ export function createLlm(
   })
 }
 
-/** Embeddings come from the offline hashed-word model until a trained one is configured (see the search module). */
-export function createEmbeddingFallback(): EmbeddingProvider {
-  return new FakeEmbeddingProvider()
+/**
+ * Chooses the embedding provider. `auto` is the multilingual model on this machine if it has been downloaded, and the
+ * offline hashed-word stand-in otherwise (said once in the log), so search by meaning degrades instead of failing.
+ */
+export function createEmbeddings(config: EmbeddingConfig, log: Log): EmbeddingProvider {
+  const floor = config.EMBEDDING_SIMILARITY_FLOOR
+  const withFloor = <T extends EmbeddingProvider>(p: T): T => {
+    if (floor !== undefined) Object.defineProperty(p, 'similarityFloor', { value: floor })
+    return p
+  }
+  const local = () =>
+    withFloor(
+      new TransformersEmbeddingProvider({
+        model: config.EMBEDDING_MODEL,
+        dir: config.EMBEDDING_MODEL_DIR,
+      }),
+    )
+  switch (config.EMBEDDING_PROVIDER) {
+    case 'fake':
+      return withFloor(new FakeEmbeddingProvider())
+    case 'local':
+      return local()
+    case 'hosted':
+      return new HostedEmbeddingProvider({
+        url: config.EMBEDDING_API_URL!,
+        apiKey: config.EMBEDDING_API_KEY!,
+        model: config.EMBEDDING_API_MODEL,
+        dimensions: FAKE_DIMENSIONS,
+        similarityFloor: floor ?? 0.5,
+        timeoutMs: 15_000,
+      })
+    case 'auto':
+      if (hasModel(config.EMBEDDING_MODEL_DIR, config.EMBEDDING_MODEL)) return local()
+      log.info(
+        { model: config.EMBEDDING_MODEL, dir: config.EMBEDDING_MODEL_DIR },
+        'embedding model not downloaded; search by meaning uses the offline stand-in (npm run models:download-embeddings)',
+      )
+      return withFloor(new FakeEmbeddingProvider())
+  }
 }

@@ -45,7 +45,15 @@ describe('migrations go up and down cleanly', () => {
   it('applies every migration', async () => {
     await migrate(drizzle(pool), { migrationsFolder: folder })
     const t = await tables()
-    expect(t).toEqual(expect.arrayContaining(['users', 'projects', 'transcripts', 'llm_usage']))
+    expect(t).toEqual(
+      expect.arrayContaining([
+        'users',
+        'projects',
+        'transcripts',
+        'llm_usage',
+        'sentence_embeddings',
+      ]),
+    )
     expect(await applied()).toBeGreaterThanOrEqual(2)
   })
 
@@ -59,16 +67,20 @@ describe('migrations go up and down cleanly', () => {
 
   it('undoes the newest migration and only that one', async () => {
     const before = await applied()
-    expect(await hasColumn('transcripts', 'content_hash')).toBe(true)
+    expect(await tables()).toContain('sentence_embeddings')
     const undone = await migrateDown(pool, folder, 1)
     expect(undone).toHaveLength(1)
     expect(await applied()).toBe(before - 1)
-    expect(await hasColumn('transcripts', 'content_hash')).toBe(false)
-    // The one before it is still there.
+    expect(await tables()).not.toContain('sentence_embeddings')
+    expect(await hasColumn('transcripts', 'embeddings_hash')).toBe(false)
+    // The ones before it are still there.
+    expect(await hasColumn('transcripts', 'content_hash')).toBe(true)
     expect(await tables()).toContain('llm_usage')
   })
 
-  it('can undo the one before that too', async () => {
+  it('can undo the ones before that too', async () => {
+    await migrateDown(pool, folder, 1)
+    expect(await hasColumn('transcripts', 'content_hash')).toBe(false)
     await migrateDown(pool, folder, 1)
     const t = await tables()
     expect(t).not.toContain('llm_usage')

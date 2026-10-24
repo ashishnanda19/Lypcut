@@ -25,7 +25,7 @@ const searchQuery = z.object({
  * and misspellings are fine. Results are the front end's SearchResult.
  */
 export const searchRoutes: FastifyPluginAsyncZod = async (app) => {
-  const service = new SearchService(app.deps)
+  const service = new SearchService(app.deps, app.log)
   app.get(
     '/projects/:id/search',
     {

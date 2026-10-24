@@ -23,6 +23,9 @@ x-app-env: &app-env
   TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-whisper-local}
   WHISPER_BIN: whisper-cli
   WHISPER_MODEL_PATH: /models/ggml-${WHISPER_MODEL:-small}.bin
+  EMBEDDING_MODEL_DIR: /models/embeddings
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-auto}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
   # What the browser uses for presigned URLs (the host-mapped MinIO port).
@@ -37,7 +40,9 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # pgvector for semantic search. (Debian-based: if you have an older volume made by the Alpine image, run
+    # `REINDEX DATABASE lypcut` once, because the two sort text differently.)
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_USER: lypcut
       POSTGRES_PASSWORD: lypcut
@@ -97,6 +102,16 @@ services:
     volumes: [models:/models]
     restart: 'no'
 
+  # Downloads the embedding model once (about 120 MB), for search by meaning, then exits. Without it, search still works
+  # by words alone and by the built-in stand-in for meaning.
+  embedding-model:
+    build: *build
+    image: lypcut-embedding-model
+    command: ['node', 'dist/tools/download-embedding-model.js']
+    environment: *app-env
+    volumes: [models:/models]
+    restart: 'no'
+
   # Applies database migrations, then exits. The API and worker wait for it.
   migrate:
     build: *build
@@ -111,8 +126,11 @@ services:
     build: *build
     image: lypcut-api
     environment: *app-env
+    # The embedding model (downloaded once by embedding-model) is read-only here: the API embeds each search query.
+    volumes: [models:/models:ro]
     ports: ['${API_PORT:-4000}:4000']
     depends_on:
+      embedding-model: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
@@ -141,6 +159,7 @@ services:
     volumes: [models:/models:ro]
     depends_on:
       whisper-model: { condition: service_completed_successfully }
+      embedding-model: { condition: service_completed_successfully }
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }

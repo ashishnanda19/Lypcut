@@ -41,6 +41,8 @@ export const transcripts = pgTable(
     /** The content hash (and algorithm version) the stored highlights were computed for. Null: not yet, or only roughly. */
     highlightsHash: text(),
     chaptersHash: text(),
+    /** The content hash and model the stored sentence embeddings were made for. */
+    embeddingsHash: text(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('transcripts_project_uq').on(t.projectId)],

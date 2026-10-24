@@ -56,6 +56,7 @@ describe('migrations', () => {
         'llm_usage',
         'projects',
         'scenes',
+        'sentence_embeddings',
         'sessions',
         'silences',
         'timeline_ops',
@@ -82,7 +83,7 @@ describe('migrations', () => {
       join information_schema.columns c
         on c.table_name = kcu.table_name and c.column_name = kcu.column_name and c.table_schema = 'public'
       where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = 'public'`)
-    expect(r.rows.length).toBe(20)
+    expect(r.rows.length).toBe(21)
     expect(r.rows.every((x) => x.data_type === 'uuid')).toBe(true)
   })
 

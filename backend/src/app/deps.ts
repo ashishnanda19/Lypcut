@@ -4,7 +4,7 @@ import { createRedis } from '../queue/connection.js'
 import { createQueues } from '../queue/queues.js'
 import { Storage } from '../lib/storage.js'
 import pino from 'pino'
-import { createEmbeddingFallback, createLlm } from '../llm/index.js'
+import { createEmbeddings, createLlm } from '../llm/index.js'
 import { loggerOptions } from '../lib/logger.js'
 import { fakeChapters, fakeHighlights } from '../highlights/fake.js'
 import type { AppDeps } from './types.js'
@@ -22,7 +22,7 @@ export function createDeps(config: Config): AppDeps {
       log: pino(loggerOptions(config, 'llm')),
       handlers: { highlights: fakeHighlights, chapters: fakeChapters },
     }),
-    embeddings: createEmbeddingFallback(),
+    embeddings: createEmbeddings(config, pino(loggerOptions(config, 'llm'))),
   }
 }
 

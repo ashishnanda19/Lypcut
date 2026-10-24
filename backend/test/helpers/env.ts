@@ -18,4 +18,8 @@ export const TEST_ENV: Record<string, string> = {
   AUTH_ACCESS_SECRET: 'test-secret-test-secret-test-secret-test-secret',
   // High enough that ordinary tests never trip it; the tests that exercise limits lower it.
   AUTH_RATE_LIMIT_MAX: '1000',
+  // Tests use the offline stand-ins, so they do not depend on a downloaded model or an API key. Tests of the real
+  // embedding model build that provider themselves.
+  EMBEDDING_PROVIDER: 'fake',
+  LLM_PROVIDER: 'fake',
 }

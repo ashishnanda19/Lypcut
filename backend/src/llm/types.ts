@@ -76,6 +76,11 @@ export interface EmbeddingProvider {
   readonly model: string
   /** Length of every vector. The database column is sized to it. */
   readonly dimensions: number
+  /**
+   * Cosine similarity below which a text is not about the query at all. It differs by model: some spread unrelated
+   * texts near 0, others (like e5) keep everything above 0.75, so a fixed number would suit only one of them.
+   */
+  readonly similarityFloor: number
   /** Some models want to know whether a text is a search query or a passage being searched. Vectors are unit length. */
   embed(texts: string[], kind: EmbeddingKind, signal?: AbortSignal): Promise<number[][]>
 }

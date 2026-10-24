@@ -160,6 +160,22 @@ export const envSchema = z
     PLANNER_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
     PLANNER_BURST_PER_MINUTE: z.coerce.number().int().min(1).default(10),
 
+    /**
+     * What turns text into vectors for search by meaning. `auto` uses the multilingual model on this machine (see
+     * `npm run models:download-embeddings`) when it has been downloaded, and the offline hashed-word stand-in when not,
+     * so search always works. `hosted` calls any OpenAI-compatible /embeddings endpoint.
+     */
+    EMBEDDING_PROVIDER: z.enum(['auto', 'local', 'hosted', 'fake']).default('auto'),
+    EMBEDDING_MODEL: z.string().default('Xenova/multilingual-e5-small'),
+    EMBEDDING_MODEL_DIR: z.string().default('./models/embeddings'),
+    EMBEDDING_API_URL: optionalString,
+    EMBEDDING_API_KEY: optionalString,
+    EMBEDDING_API_MODEL: z.string().default('text-embedding-3-small'),
+    /** How alike a sentence window must be to a query to count at all. Unset uses the provider's own figure. */
+    EMBEDDING_SIMILARITY_FLOOR: z.coerce.number().min(0).max(1).optional(),
+    /** How long a query's vector is remembered, so typing and retyping does not embed it again. */
+    EMBEDDING_QUERY_CACHE_SEC: z.coerce.number().int().min(0).default(300),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })
@@ -194,6 +210,14 @@ export const envSchema = z
         path: ['AUTH_ACCESS_SECRET'],
         message:
           'this is the development example; generate a real one with: openssl rand -base64 48',
+      })
+    }
+    if (env.EMBEDDING_PROVIDER === 'hosted' && !(env.EMBEDDING_API_URL && env.EMBEDDING_API_KEY)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMBEDDING_API_URL'],
+        message:
+          'EMBEDDING_API_URL and EMBEDDING_API_KEY are required when EMBEDDING_PROVIDER=hosted',
       })
     }
     if (env.LLM_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {

@@ -5,6 +5,7 @@ import {
   chapters,
   highlights,
   jobs,
+  sentenceEmbeddings,
   jobStages,
   llmUsage,
   projects,
@@ -21,6 +22,7 @@ import { resetDatabase } from '../helpers/db.js'
 import { makeSceneVideo } from '../helpers/media.js'
 import { startProcessing, tmpRoot, waitForJob } from '../helpers/pipeline.js'
 import { ScriptedProvider } from '../helpers/provider.js'
+import { TopicEmbeddings } from '../helpers/embeddings.js'
 import { fullUpload } from '../helpers/upload.js'
 import { signup } from '../helpers/world.js'
 
@@ -301,5 +303,54 @@ describe('computing once', () => {
         (r) => r.kind === 'highlights',
       ),
     ).toHaveLength(2)
+  })
+})
+
+describe('search by meaning in a processed project', () => {
+  it('stores one vector per sentence, remembers what they were made for, and records the work', async () => {
+    const { projectId, id } = await processed()
+    const [tr] = await db().select().from(transcripts).where(eq(transcripts.projectId, projectId))
+    const sentences = await db()
+      .select()
+      .from(transcriptSentences)
+      .where(eq(transcriptSentences.projectId, projectId))
+    const vectors = await db()
+      .select()
+      .from(sentenceEmbeddings)
+      .where(eq(sentenceEmbeddings.projectId, projectId))
+    expect(vectors).toHaveLength(sentences.length)
+    expect(vectors[0]!.model).toBe('hashed-words')
+    expect(tr!.embeddingsHash).toContain(tr!.contentHash!)
+    const usage = await db().select().from(llmUsage).where(eq(llmUsage.userId, id))
+    expect(usage.filter((u) => u.kind === 'embed')).toHaveLength(1)
+  })
+
+  it('does not fail the project when the embedding service is down: search still works by words', async () => {
+    const original = t.deps.embeddings
+    const down = new TopicEmbeddings({})
+    down.fail = new Error('embedding service down')
+    t.deps.embeddings = down
+    try {
+      const { c, projectId, jobId } = await processed()
+      const [job] = await db().select().from(jobs).where(eq(jobs.id, jobId))
+      expect(job!.status).toBe('done')
+      expect(
+        await db()
+          .select()
+          .from(sentenceEmbeddings)
+          .where(eq(sentenceEmbeddings.projectId, projectId)),
+      ).toEqual([])
+      const [tr] = await db().select().from(transcripts).where(eq(transcripts.projectId, projectId))
+      expect(tr!.embeddingsHash).toBeNull()
+      const res = await c.get(`/api/projects/${projectId}/search?q=funding`)
+      expect(res.status).toBe(200)
+      expect(res.body.length).toBeGreaterThan(0)
+      // Chapters still came out, by embedding the sentences again (or failing back to the first words).
+      expect(
+        (await db().select().from(chapters).where(eq(chapters.projectId, projectId))).length,
+      ).toBeGreaterThanOrEqual(1)
+    } finally {
+      t.deps.embeddings = original
+    }
   })
 })
