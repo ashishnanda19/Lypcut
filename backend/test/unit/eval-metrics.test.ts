@@ -87,6 +87,7 @@ describe('the golden set', () => {
       'add_captions',
       'set_caption_style',
       'make_reel',
+      'match_my_style',
       'find_moment',
       'best_hooks',
       'cut_range',

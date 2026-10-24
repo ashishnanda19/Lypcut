@@ -18,7 +18,10 @@ import {
   effectPlan,
   fillersPlan,
   finishReel,
+  matchMyStylePlan,
+  noStyleYet,
   pausesPlan,
+  profileStyleId,
   reelPlan,
   trimIntro,
   windowFor,
@@ -207,8 +210,14 @@ export class PlannerService {
       applyStyle: input.applyStyle,
       planId,
     })
-    const system = loadPrompt('planner.v1')
-    const context = buildDataBlock({ data, reply: rl, playhead: input.playhead })
+    const system = loadPrompt('planner.v2')
+    // The creator's style goes to the model only when they have turned it on and there is a profile to show.
+    const context = buildDataBlock({
+      data,
+      reply: rl,
+      playhead: input.playhead,
+      style: input.applyStyle ? data.style : undefined,
+    })
     const messages = conversation(input.history, userText)
 
     for (let attempt = 0; attempt <= MAX_REPAIRS; attempt++) {
@@ -299,9 +308,39 @@ export class PlannerService {
       case 'trim_pauses':
         return { result: pausesPlan(ctx, rl, call.input.maxPauseSec) }
       case 'add_captions':
-        return { result: captionsPlan({ ...ctx, styleId: call.input.styleId }, rl) }
-      case 'set_caption_style':
-        return { result: captionStylePlan(ctx, call.input.styleId, rl) }
+        return {
+          result: captionsPlan(
+            {
+              ...ctx,
+              applyStyle: ctx.applyStyle || !!call.input.useMyStyle,
+              styleId: call.input.styleId,
+            },
+            rl,
+          ),
+        }
+      case 'set_caption_style': {
+        // Their own look, when they asked for it and it has one the editor can apply; otherwise the look the model named.
+        const mine = ctx.applyStyle || call.input.useMyStyle ? profileStyleId(ctx.style) : null
+        const id = call.input.styleId ?? mine
+        if (!id) {
+          return {
+            result: ctx.style
+              ? {
+                  text: say(rl, {
+                    en: 'Your own caption look is not one I can apply yet. Tell me which of the caption styles you want.',
+                    hinglish:
+                      'Aapka apna caption look abhi main laga nahi sakta. Batao kaunsi caption style chahiye.',
+                    hi: 'आपका अपना कैप्शन लुक मैं अभी नहीं लगा सकता। बताइए कौन सी कैप्शन स्टाइल चाहिए।',
+                  }),
+                  route: '/app/style',
+                }
+              : noStyleYet(rl),
+          }
+        }
+        return { result: captionStylePlan(ctx, id, rl, !call.input.styleId && id === mine) }
+      }
+      case 'match_my_style':
+        return { result: matchMyStylePlan(ctx, rl) }
       case 'trim_intro':
         return { result: trimIntro(ctx, rl) }
       case 'best_hooks':
@@ -362,7 +401,12 @@ export class PlannerService {
       case 'find_moment':
         return { result: await this.findMoment(ctx, data, call.input.query, rl) }
       case 'make_reel':
-        return this.makeReel(ctx, data, call.input, rl)
+        return this.makeReel(
+          { ...ctx, applyStyle: ctx.applyStyle || !!call.input.useMyStyle },
+          data,
+          call.input,
+          rl,
+        )
     }
   }
 

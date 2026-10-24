@@ -19,6 +19,12 @@ export interface GoldenCase {
   noModel?: boolean
   /** Which script the reply should be in. Reported, not gated. */
   script?: 'devanagari' | 'latin'
+  /** Run for a person who has no style profile yet. By default the person has one. */
+  noProfile?: boolean
+  /** The "apply my style" switch. */
+  applyStyle?: boolean
+  /** The link the reply should carry (to the Style page, say). */
+  route?: string
 }
 
 export const GOLDEN: GoldenCase[] = [
@@ -220,6 +226,91 @@ export const GOLDEN: GoldenCase[] = [
     text: 'आप क्या कर सकते हो',
     tool: 'none',
     outcome: 'text',
+    script: 'devanagari',
+  },
+
+  // The creator's own style (with a profile, and without one)
+  { id: 'mine-en-style', text: 'match my style', tool: 'match_my_style', outcome: 'plan' },
+  {
+    id: 'en-style-apply',
+    text: 'apply my style to this video',
+    tool: 'match_my_style',
+    outcome: 'plan',
+  },
+  {
+    id: 'en-style-look',
+    text: 'make it look like my best Reels',
+    tool: 'match_my_style',
+    outcome: 'plan',
+  },
+  {
+    id: 'en-style-captions',
+    text: 'add captions in my style',
+    tool: 'add_captions',
+    outcome: 'plan',
+  },
+  {
+    id: 'en-style-default',
+    text: 'add captions',
+    tool: 'add_captions',
+    outcome: 'plan',
+    applyStyle: true,
+  },
+  {
+    id: 'en-style-reel',
+    text: 'make a 30 second reel in my style',
+    tool: 'make_reel',
+    outcome: ['question', 'plan'],
+  },
+  { id: 'mine-hi-style', text: 'meri style lagao', tool: 'match_my_style', outcome: 'plan' },
+  {
+    id: 'mine-hi-style-match',
+    text: 'meri style match karo',
+    tool: 'match_my_style',
+    outcome: 'plan',
+  },
+  {
+    id: 'hi-style-edit',
+    text: 'mere style mein edit karo',
+    tool: 'match_my_style',
+    outcome: 'plan',
+  },
+  {
+    id: 'hi-style-captions',
+    text: 'captions mere style mein lagao',
+    tool: 'add_captions',
+    outcome: 'plan',
+  },
+  {
+    id: 'dev-style',
+    text: 'मेरी स्टाइल लगाओ',
+    tool: 'match_my_style',
+    outcome: 'plan',
+    script: 'devanagari',
+  },
+  {
+    id: 'en-style-none',
+    text: 'match my style',
+    tool: 'match_my_style',
+    outcome: 'text',
+    noProfile: true,
+    route: '/app/style',
+  },
+  {
+    id: 'hi-style-none',
+    text: 'meri style lagao',
+    tool: 'match_my_style',
+    outcome: 'text',
+    noProfile: true,
+    route: '/app/style',
+  },
+  {
+    id: 'dev-style-none',
+    text: 'मेरी स्टाइल लगाओ',
+    tool: 'match_my_style',
+    outcome: 'text',
+    noProfile: true,
+    route: '/app/style',
     script: 'devanagari',
   },
 ]

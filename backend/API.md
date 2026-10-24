@@ -715,6 +715,15 @@ The model never writes timestamps or raw ops. It picks from a small set of tools
 `hl_0`, chapters `ch_1`), the server builds the op, checks it against the same rules as `POST /timeline/ops`, and only
 then saves it. A plan that does not pass is never returned. Nothing here touches the video: it is edits to the timeline.
 
+The assistant also edits in the creator's own style (see [Style](#style)). When a person has a profile, "match my style" (or "meri style
+lagao", or "मेरी स्टाइल लगाओ") builds one plan of ordinary ops: a Reel from the highlight that opens the way their best Reels do, pauses
+and fillers tightened to how often they cut, and captions in their most-used look. With no profile it answers with how to get one and
+`"route": "/app/style"`. With the **apply my style** switch on (`applyStyle: true`), captions and Reels default to their look and the plan's
+description says so ("Using your saffron-pop style."); asking for captions or a Reel "in my style" applies it without the switch. When the
+profile comes from few Reels (`confidence: "low"`) the reply says so and links to the Style page. Their style is never applied to anything
+but what the plan's ops say, and the model sees only their usual look ids, cut pace, timing and one sentence: never the handle or any number
+from Instagram.
+
 Music is not offered. Asking for it is answered with a short explanation and no plan.
 
 Each result is a `PlannerResult`: `text` always, and at most one of `plan`, `question`, `action` (`undo` or `redo`, for the

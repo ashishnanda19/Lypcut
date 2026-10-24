@@ -107,6 +107,54 @@ export const fakePlanner: FakeHandler = (req) => {
     }
   }
 
+  // The creator's own style. "match my style" is the tool; "captions in my style" and "a Reel in my style" use it as the default.
+  const ownStyle = has(p, [
+    'my style',
+    'my own style',
+    'my look',
+    'meri style',
+    'mera style',
+    'mere style',
+    'apni style',
+    'apna style',
+    'मेरी स्टाइल',
+    'मेरा स्टाइल',
+    'मेरे स्टाइल',
+    'अपनी स्टाइल',
+  ])
+  const likeMine = has(p, [
+    'like my best',
+    'look like my',
+    'jaisa mera',
+    'meri best reels jaisa',
+    'मेरी बेस्ट रील्स जैसा',
+  ])
+  if (likeMine) return call('match_my_style', {})
+  // "use my caption style": their own caption look, as a style change.
+  if (
+    has(p, [
+      'my caption style',
+      'my caption look',
+      'meri caption style',
+      'mera caption style',
+      'meri caption look',
+      'मेरी कैप्शन स्टाइल',
+    ])
+  )
+    return call('set_caption_style', { useMyStyle: true })
+  if (ownStyle) {
+    if (has(p, ['caption', 'captions', 'subtitle', 'कैप्शन']))
+      return call('add_captions', { useMyStyle: true })
+    if (has(p, ['reel', 'reels', 'short', 'रील'])) {
+      const s = p.match(SECONDS)
+      return call('make_reel', {
+        useMyStyle: true,
+        ...(s ? { lengthSec: Math.min(180, Number(s[1])) } : {}),
+      })
+    }
+    return call('match_my_style', {})
+  }
+
   if (has(p, ['filler', 'fillers', 'फिलर', 'umm', ' um ', ' uh ', 'matlab', 'basically', 'ahem']))
     return call('remove_fillers', {})
   if (
@@ -134,16 +182,6 @@ export const fakePlanner: FakeHandler = (req) => {
   if (has(p, ['blur', 'dhundhla', 'ब्लर'])) return call('add_effect', { effect: 'blur' })
   if (has(p, ['zoom', 'punch in', 'punch-in', 'close up', 'ज़ूम', 'जूम']))
     return call('add_effect', { effect: 'zoom' })
-  if (has(p, ['my style', 'apply style', 'meri style', 'mera style', 'मेरी स्टाइल', 'learn my'])) {
-    return text(
-      say(rl, {
-        en: 'Matching your own style comes later. For now I can add captions in any of the caption styles.',
-        hinglish:
-          'Aapki apni style match karna baad mein aayega. Abhi main kisi bhi caption style mein captions laga sakta hoon.',
-        hi: 'आपकी अपनी स्टाइल मैच करना बाद में आएगा। अभी मैं किसी भी कैप्शन स्टाइल में कैप्शन लगा सकता हूं।',
-      }),
-    )
-  }
   if (
     has(p, ['intro', 'shuru', 'beginning', 'इंट्रो']) &&
     has(p, ['trim', 'cut', 'hata', 'remove', 'skip', 'हटा'])

@@ -501,7 +501,7 @@ describe('when a real model answers', () => {
     expect(r.purpose).toBe('planner')
     expect(r.system).toMatch(/Kaat/)
     expect(r.context).toMatch(/^<data>/)
-    expect(r.tools!.length).toBe(13)
+    expect(r.tools!.length).toBe(14)
     expect(r.messages).toEqual(
       [
         { role: 'user', content: 'earlier' },

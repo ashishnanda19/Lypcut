@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { applyOp, type TimelineOp } from '@lypcut/timeline-core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { editPlans } from '../src/db/schema/index.js'
+import { editPlans, styleProfiles } from '../src/db/schema/index.js'
 import { AnthropicProvider } from '../src/llm/anthropic.js'
 import { FakeProvider } from '../src/llm/fake.js'
 import { estimateCostUsd } from '../src/llm/pricing.js'
@@ -117,17 +117,40 @@ describe(`planner evaluation (${mode})`, () => {
     })
     const service = new PlannerService({ ...t.deps, llm }, log)
 
+    // Two people with the same talk: one has taught the assistant their style, one has not.
     const person = await signup(t, 'studio')
     const project = await readyProject(t, person, { content: LINES, fitTimeline: true })
+    const newcomer = await signup(t, 'studio')
+    const newProject = await readyProject(t, newcomer, { content: LINES, fitTimeline: true })
+    await t.deps.database.db.insert(styleProfiles).values({
+      userId: person.id,
+      confidence: 'medium',
+      profile: {
+        reelsAnalysed: 8,
+        captionStyles: [
+          { id: 'karaoke', share: 0.7 },
+          { id: 'boxed', share: 0.3 },
+        ],
+        cutPace: 3.2,
+        hookTimingSec: 1.5,
+        music: [],
+        hookRetention: [],
+        fonts: ['Inter'],
+        colors: [],
+        confidence: 'medium',
+      },
+    })
 
     const runs: CaseRun[] = []
     for (const c of GOLDEN) {
       recorder.calls = []
       const started = performance.now()
-      const result = await service.message(person.id, project.projectId, {
+      const who = c.noProfile ? newcomer : person
+      const where = c.noProfile ? newProject : project
+      const result = await service.message(who.id, where.projectId, {
         text: c.text,
         playhead: c.playhead ?? 0,
-        applyStyle: false,
+        applyStyle: c.applyStyle ?? false,
         history: [],
       })
       const latencyMs = performance.now() - started
@@ -140,6 +163,7 @@ describe(`planner evaluation (${mode})`, () => {
       const outcomeOk = asList(c.outcome).includes(outcome)
       if (!toolOk) notes.push(`tool ${tool}, wanted ${asList(c.tool).join(' or ')}`)
       if (!outcomeOk) notes.push(`got ${outcome}, wanted ${asList(c.outcome).join(' or ')}`)
+      if (c.route && result.route !== c.route) notes.push(`no link to ${c.route}`)
       if (c.noModel && recorder.calls.length)
         notes.push('reached the model; a fixed rule should answer')
       if (c.script === 'devanagari' && !/[ऀ-ॿ]/.test(result.text))
@@ -152,7 +176,7 @@ describe(`planner evaluation (${mode})`, () => {
           .from(editPlans)
           .where(eq(editPlans.id, result.plan.id))
         try {
-          applyOp(project.timeline, result.plan.op)
+          applyOp(where.timeline, result.plan.op)
           planValid = !!saved && !usesForbiddenOp(result.plan.op)
         } catch {
           planValid = false

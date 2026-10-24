@@ -94,7 +94,7 @@ describe('asking for music', () => {
 })
 
 describe('the tools', () => {
-  it('are the whole list: twelve, each with a description', () => {
+  it('are the whole list: fourteen, each with a description', () => {
     expect(TOOLS.map((t) => t.name).sort()).toEqual(
       [
         'add_captions',
@@ -104,6 +104,7 @@ describe('the tools', () => {
         'cut_range',
         'find_moment',
         'make_reel',
+        'match_my_style',
         'redo',
         'remove_fillers',
         'set_caption_style',
@@ -202,7 +203,7 @@ describe('the tools', () => {
   it('do not accept inherited names as tools', () => {
     expect(parseToolCall('constructor', {})).toMatchObject({ ok: false })
     expect(parseToolCall('__proto__', {})).toMatchObject({ ok: false })
-    expect(Object.keys(toolSchemas)).toHaveLength(13)
+    expect(Object.keys(toolSchemas)).toHaveLength(14)
   })
 })
 

@@ -661,3 +661,31 @@ Consequences:
   a prefix of the form `users/<id>/style/`. Account deletion already removes the whole `users/<id>/` folder, style included, and a test proves it.
 - **The Style upload and the quota.** Plan limits for Style are a table (`STYLE_LIMITS` in `src/lib/plans.ts`), the same for every plan today; the largest
   accepted file is `STYLE_MAX_REEL_BYTES`.
+
+## Phase 3, step 5: the planner and the creator's style
+
+- **The profile is loaded with the project and cut down field by field** into a small type (`StyleLite`): usual caption looks, cut pace, timing, confidence and the
+  summary sentence. That type has no handle, no Reel and no number from Instagram, so none can reach a prompt, and a test fills a stored profile with a handle, view
+  counts and a token and shows none of them survive.
+- **The model sees the style only when "apply my style" is on and a profile exists** (`myStyle` in the data block). The tool itself works whenever there is a profile:
+  asking for "match my style" by name is the consent for that request, so it does not need the switch.
+- **`match_my_style` takes no arguments** and is built by code, like every plan: a Reel from a highlight, pauses and fillers tightened by a pace table, captions in the
+  creator's top look. It is one `batch` of ordinary ops (`cutSource`, `addCaptions`, `setCaptionStyle`), dry-run on the Phase 1 engine like any other.
+  - **"The highlight whose opening is closest to `hookTimingSec`"** is my reading of a sentence that can be read several ways. Every highlight starts on a sentence, so
+    its opening cannot be measured by where the first word falls; I use the length of its first sentence, the line that has to land the hook, and pick the highlight
+    whose first sentence is closest to how soon the creator starts. Ties go to the better hook, and with no timing it is the best hook. If you meant something else, it
+    is one function (`closestHook`).
+  - **The pace table** (`PACE_TABLE`) is mine and untested on real creators: 4 or more cuts per 10 s shortens pauses over 0.35 s, 2.5 or more over 0.5 s, 1 or more over
+    0.7 s, otherwise 1 s; fillers come out for anyone who cuts at least once every 10 s.
+  - Without a highlight it falls back to the current edit with captions and pace.
+- **Defaults.** `add_captions`, `set_caption_style` and `make_reel` use the creator's look when the switch is on, and say so in the plan description ("Using your
+  saffron-pop style."). A look the model or the person named wins. The first look the editor can apply is used: `custom` cannot be applied, so it is skipped.
+- **An addition to the document: `useMyStyle`.** Without it, "captions in my style" with the switch off would give the default captions, which reads as the assistant
+  ignoring the request. The three tools take an optional `useMyStyle`, which the model sets when the person asked for their own style; `set_caption_style` therefore
+  no longer requires a `styleId`.
+- **Low confidence is never hidden.** A plan that uses a profile from few Reels says so in the reply and the description, and links to `/app/style`.
+- **With no profile** every style request gets the Phase 2 mock's answer (connect Instagram or upload three to five Reels) and `route: '/app/style'`.
+- **The prompt is now `planner.v2.md`** (the file was renamed and extended; the version in use is a name).
+- **The offline model** understands "match my style" in English, Hinglish and Hindi, "captions/Reels in my style", "like my best Reels" and "my caption style". Its old
+  answer, that matching a style "comes later", is gone.
+- **The evaluation** has 14 new golden prompts (69 in all), with and without a profile, checking the tool, the outcome and, with no profile, the link to the Style page.

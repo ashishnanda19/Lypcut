@@ -12,7 +12,7 @@ import {
   type TimelineItem,
   type TimelineOp,
 } from '@lypcut/timeline-core'
-import { CAPTION_STYLES, captionStyle } from './caption-styles.js'
+import { CAPTION_STYLE_IDS, CAPTION_STYLES, captionStyle } from './caption-styles.js'
 import { say } from './language.js'
 import { randomUUID } from 'node:crypto'
 import type {
@@ -23,6 +23,7 @@ import type {
   PlannerContext,
   QuestionCard,
   RL,
+  StyleLite,
 } from './types.js'
 
 /**
@@ -168,11 +169,52 @@ export function pausesPlan(ctx: PlannerContext, rl: RL, maxPauseSec = 0.7): Buil
   }
 }
 
-export function styleIdFor(ctx: PlannerContext): string {
-  if (ctx.styleId) return ctx.styleId
-  if (ctx.applyStyle && ctx.style?.connected && ctx.style.captionStyles[0])
-    return ctx.style.captionStyles[0].id
-  return ctx.tl.settings.captionStyleId
+/** The creator's usual caption look: the first of their styles that the editor can apply (`custom` cannot be). */
+export function profileStyleId(style: StyleLite | undefined): string | null {
+  const known: readonly string[] = CAPTION_STYLE_IDS
+  return style?.captionStyles.find((c) => known.includes(c.id))?.id ?? null
+}
+
+/**
+ * Which caption look a plan uses. One the model chose for this request wins; otherwise the creator's own, when they have
+ * asked for their style to be applied (the toggle, or by saying so); otherwise whatever the edit already has.
+ */
+export function resolveStyle(ctx: PlannerContext): { id: string; fromProfile: boolean } {
+  if (ctx.styleId) return { id: ctx.styleId, fromProfile: false }
+  const mine = ctx.applyStyle ? profileStyleId(ctx.style) : null
+  return mine
+    ? { id: mine, fromProfile: true }
+    : { id: ctx.tl.settings.captionStyleId, fromProfile: false }
+}
+
+export const styleIdFor = (ctx: PlannerContext): string => resolveStyle(ctx).id
+
+/** "Using your saffron-pop style." Said in the plan whenever the look came from the creator's profile. */
+const usingYourStyle = (rl: RL, id: string) =>
+  say(rl, {
+    en: `Using your ${id} style.`,
+    hinglish: `Aapki ${id} style use ho rahi hai.`,
+    hi: `आपकी ${id} स्टाइल इस्तेमाल हो रही है।`,
+  })
+
+/** Said whenever the style comes from few Reels. Never left out. */
+const fewReels = (rl: RL) =>
+  say(rl, {
+    en: 'Your style comes from only a few Reels, so treat it as a first guess. Add more Reels on the Style page for a sharper match.',
+    hinglish:
+      'Aapki style sirf kuch Reels se seekhi hai, isliye ise pehla andaza samjho. Style page par aur Reels jodo, match aur sahi hoga.',
+    hi: 'आपकी स्टाइल सिर्फ कुछ रील्स से सीखी गई है, इसे पहला अंदाज़ा समझें। Style पेज पर और रील्स जोड़ें।',
+  })
+
+/** What to add to a plan's words, description and link when its look came from the creator's profile. */
+function styleNotes(ctx: PlannerContext, rl: RL, id: string, fromProfile: boolean) {
+  if (!fromProfile) return { text: '', description: '', route: undefined }
+  const few = ctx.style?.confidence === 'low'
+  return {
+    text: few ? ` ${fewReels(rl)}` : '',
+    description: ` ${usingYourStyle(rl, id)}${few ? ` ${fewReels(rl)}` : ''}`,
+    route: few ? '/app/style' : undefined,
+  }
 }
 
 export function captionsPlan(ctx: PlannerContext, rl: RL): BuiltResult {
@@ -185,7 +227,8 @@ export function captionsPlan(ctx: PlannerContext, rl: RL): BuiltResult {
       }),
     }
   }
-  const sid = styleIdFor(ctx)
+  const { id: sid, fromProfile } = resolveStyle(ctx)
+  const note = styleNotes(ctx, rl, sid, fromProfile)
   const style = captionStyle(sid)
   const ops: TimelineOp[] = [{ type: 'addCaptions', items, replace: true }]
   if (sid !== ctx.tl.settings.captionStyleId || !ctx.tl.settings.captionsOn)
@@ -193,18 +236,20 @@ export function captionsPlan(ctx: PlannerContext, rl: RL): BuiltResult {
   const devanagari =
     ctx.tr.words.filter((w) => w.language === 'hi').length > ctx.tr.words.length / 2
   return {
-    text: say(rl, {
-      en: `Captions are ready: ${items.length} short phrases in the ${style.name} style. Hindi words stay in Devanagari.`,
-      hinglish: `Captions ready hain: ${items.length} chhote phrases, ${style.name} style mein. Hindi words Devanagari mein dikhenge.`,
-      hi: `कैप्शन तैयार हैं: ${items.length} छोटे वाक्यांश, ${style.name} स्टाइल में।`,
-    }),
+    text:
+      say(rl, {
+        en: `Captions are ready: ${items.length} short phrases in the ${style.name} style. Hindi words stay in Devanagari.`,
+        hinglish: `Captions ready hain: ${items.length} chhote phrases, ${style.name} style mein. Hindi words Devanagari mein dikhenge.`,
+        hi: `कैप्शन तैयार हैं: ${items.length} छोटे वाक्यांश, ${style.name} स्टाइल में।`,
+      }) + note.text,
     plan: makePlan({
       title: say(rl, { en: 'Add captions', hinglish: 'Captions lagao', hi: 'कैप्शन जोड़ें' }),
-      description: say(rl, {
-        en: `${items.length} phrases, ${style.name} style. Change the look any time in Properties.`,
-        hinglish: `${items.length} phrases, ${style.name} style. Look kabhi bhi Properties mein badal sakte ho.`,
-        hi: `${items.length} वाक्यांश, ${style.name} स्टाइल। लुक कभी भी बदल सकते हैं।`,
-      }),
+      description:
+        say(rl, {
+          en: `${items.length} phrases, ${style.name} style. Change the look any time in Properties.`,
+          hinglish: `${items.length} phrases, ${style.name} style. Look kabhi bhi Properties mein badal sakte ho.`,
+          hi: `${items.length} वाक्यांश, ${style.name} स्टाइल। लुक कभी भी बदल सकते हैं।`,
+        }) + note.description,
       op: ops.length === 1 ? ops[0]! : { type: 'batch', ops, label: 'Add captions' },
       strip: [
         { kind: 'keep', weight: 1 },
@@ -219,11 +264,18 @@ export function captionsPlan(ctx: PlannerContext, rl: RL): BuiltResult {
       focus: items[0]?.start,
     }),
     chips: ['Make a 30 second Reel', 'Switch to karaoke captions'],
+    ...(note.route ? { route: note.route } : {}),
   }
 }
 
-export function captionStylePlan(ctx: PlannerContext, id: string, rl: RL): BuiltResult {
+export function captionStylePlan(
+  ctx: PlannerContext,
+  id: string,
+  rl: RL,
+  fromProfile = false,
+): BuiltResult {
   const style = captionStyle(id)
+  const note = styleNotes(ctx, rl, id, fromProfile)
   const hasCaps = Object.values(ctx.tl.items).some((i) => i.kind === 'caption')
   const ops: TimelineOp[] = []
   if (!hasCaps) {
@@ -232,18 +284,19 @@ export function captionStylePlan(ctx: PlannerContext, id: string, rl: RL): Built
   }
   ops.push({ type: 'setCaptionStyle', styleId: id })
   return {
-    text: say(rl, {
-      en: `${style.name} it is. ${style.note}`,
-      hinglish: `${style.name} style laga deta hoon. ${style.note}`,
-      hi: `${style.name} स्टाइल लगा देता हूं।`,
-    }),
+    text:
+      say(rl, {
+        en: `${style.name} it is. ${style.note}`,
+        hinglish: `${style.name} style laga deta hoon. ${style.note}`,
+        hi: `${style.name} स्टाइल लगा देता हूं।`,
+      }) + note.text,
     plan: makePlan({
       title: say(rl, {
         en: `Use ${style.name} captions`,
         hinglish: `${style.name} captions lagao`,
         hi: `${style.name} कैप्शन लगाएं`,
       }),
-      description: style.note,
+      description: style.note + note.description,
       op: ops.length === 1 ? ops[0]! : { type: 'batch', ops, label: `Use ${style.name} captions` },
       strip: [
         { kind: 'keep', weight: 1 },
@@ -255,6 +308,7 @@ export function captionStylePlan(ctx: PlannerContext, id: string, rl: RL): Built
     chips: CAPTION_STYLES.filter((s) => s.id !== id)
       .slice(0, 2)
       .map((s) => `Switch to ${s.name} captions`),
+    ...(note.route ? { route: note.route } : {}),
   }
 }
 
@@ -290,6 +344,10 @@ export interface ReelOptions {
   title: string
   fast: boolean
   hookScore?: number
+  /** Take out filler words. Defaults to `fast`. */
+  fillers?: boolean
+  /** Shorten pauses longer than this many seconds. Defaults to 0.7 when `fast`, and none otherwise. */
+  pauseGapSec?: number
 }
 
 /** Build the "Make a Reel" edit: keep one range, optionally tighten it, add captions. */
@@ -298,14 +356,17 @@ export function reelPlan(ctx: PlannerContext, o: ReelOptions, rl: RL): BuiltResu
   let tl = applyOp(ctx.tl, cuts[0]!).timeline
   let fillerCount = 0
   let pauseCount = 0
-  if (o.fast) {
+  if (o.fillers ?? o.fast) {
     const f = removeFillersOp(tl, ctx.tr.words)
     if (f) {
       cuts.push(f.op)
       tl = applyOp(tl, f.op).timeline
       fillerCount = f.count
     }
-    const p = trimPausesOp(tl, ctx.tr.words)
+  }
+  const gap = o.pauseGapSec ?? (o.fast ? 0.7 : undefined)
+  if (gap !== undefined) {
+    const p = trimPausesOp(tl, ctx.tr.words, gap, Math.min(0.3, gap / 2))
     if (p) {
       cuts.push(p.op)
       tl = applyOp(tl, p.op).timeline
@@ -313,7 +374,8 @@ export function reelPlan(ctx: PlannerContext, o: ReelOptions, rl: RL): BuiltResu
     }
   }
   const caps = captionsForTimeline(tl, ctx.tr.words)
-  const sid = styleIdFor(ctx)
+  const { id: sid, fromProfile } = resolveStyle(ctx)
+  const note = styleNotes(ctx, rl, sid, fromProfile)
   cuts.push({ type: 'addCaptions', items: caps, replace: true })
   cuts.push({ type: 'setCaptionStyle', styleId: sid })
   const length = timelineDuration(tl)
@@ -324,11 +386,12 @@ export function reelPlan(ctx: PlannerContext, o: ReelOptions, rl: RL): BuiltResu
   })
   const plan = makePlan({
     title,
-    description: say(rl, {
-      en: `Keeps ${secs(o.srcFrom)} to ${secs(o.srcTo)}${o.fast ? ', removes fillers and long pauses' : ''}, then adds ${captionStyle(sid).name} captions.`,
-      hinglish: `${secs(o.srcFrom)} se ${secs(o.srcTo)} rakhta hai${o.fast ? ', fillers aur lambe pauses hatata hai' : ''}, phir ${captionStyle(sid).name} captions lagata hai.`,
-      hi: `${secs(o.srcFrom)} से ${secs(o.srcTo)} रखता है, फिर कैप्शन जोड़ता है।`,
-    }),
+    description:
+      say(rl, {
+        en: `Keeps ${secs(o.srcFrom)} to ${secs(o.srcTo)}${o.fast ? ', removes fillers and long pauses' : ''}, then adds ${captionStyle(sid).name} captions.`,
+        hinglish: `${secs(o.srcFrom)} se ${secs(o.srcTo)} rakhta hai${o.fast ? ', fillers aur lambe pauses hatata hai' : ''}, phir ${captionStyle(sid).name} captions lagata hai.`,
+        hi: `${secs(o.srcFrom)} से ${secs(o.srcTo)} रखता है, फिर कैप्शन जोड़ता है।`,
+      }) + note.description,
     op: { type: 'batch', ops: cuts, label: title },
     strip: [
       { kind: 'cut', weight: Math.max(0.5, o.srcFrom / 12) },
@@ -350,13 +413,182 @@ export function reelPlan(ctx: PlannerContext, o: ReelOptions, rl: RL): BuiltResu
     focus: 0,
   })
   return {
-    text: say(rl, {
-      en: `This Reel runs ${secs(length)} and starts on the hook. Preview it, then apply.`,
-      hinglish: `Ye Reel ${secs(length)} ki hai aur seedha hook se shuru hoti hai. Preview dekho, phir apply karo.`,
-      hi: `यह रील ${secs(length)} की है और सीधे हुक से शुरू होती है। प्रीव्यू देखें, फिर अप्लाई करें।`,
-    }),
+    text:
+      say(rl, {
+        en: `This Reel runs ${secs(length)} and starts on the hook. Preview it, then apply.`,
+        hinglish: `Ye Reel ${secs(length)} ki hai aur seedha hook se shuru hoti hai. Preview dekho, phir apply karo.`,
+        hi: `यह रील ${secs(length)} की है और सीधे हुक से शुरू होती है। प्रीव्यू देखें, फिर अप्लाई करें।`,
+      }) + note.text,
     plan,
     chips: ['Blur the background', 'Switch to boxed captions'],
+    ...(note.route ? { route: note.route } : {}),
+  }
+}
+
+/* ------------------------------- match my style ------------------------------ */
+
+/**
+ * How tightly to shorten pauses for a creator who cuts this often (cuts per 10 seconds): the more often they cut, the
+ * shorter a pause they will tolerate. Filler words come out for anyone who cuts at least every five seconds. These are the
+ * only numbers that turn a profile into an edit, and they are here to be tuned.
+ */
+export const PACE_TABLE: Array<{ minCutPace: number; pauseGapSec: number; fillers: boolean }> = [
+  { minCutPace: 4, pauseGapSec: 0.35, fillers: true },
+  { minCutPace: 2.5, pauseGapSec: 0.5, fillers: true },
+  { minCutPace: 1, pauseGapSec: 0.7, fillers: true },
+  { minCutPace: 0, pauseGapSec: 1.0, fillers: false },
+]
+
+export const paceFor = (cutPace: number) =>
+  PACE_TABLE.find((r) => cutPace >= r.minCutPace) ?? PACE_TABLE[PACE_TABLE.length - 1]!
+
+/**
+ * The highlight whose opening is closest to how the creator opens. The opening is the first sentence of the highlight, the
+ * line that has to land the hook, and its length is compared with the creator's own time to the first word. Ties go to the
+ * better hook; a creator with no timing (0) gets simply the best hook.
+ */
+export function closestHook(ctx: PlannerContext, hookTimingSec: number) {
+  const opening = (h: { start: number; end: number }) => {
+    const first = ctx.tr.sentences.find((s) => s.end > h.start + 0.01 && s.start < h.end)
+    return first ? Math.min(first.end, h.end) - Math.max(first.start, h.start) : 0
+  }
+  const ranked = [...ctx.highlights].sort((a, b) =>
+    hookTimingSec > 0
+      ? Math.abs(opening(a) - hookTimingSec) - Math.abs(opening(b) - hookTimingSec) ||
+        b.hookScore - a.hookScore ||
+        a.id.localeCompare(b.id)
+      : b.hookScore - a.hookScore || a.id.localeCompare(b.id),
+  )
+  return ranked[0]
+}
+
+/** What "match my style" says to someone with no profile yet. */
+export function noStyleYet(rl: RL): BuiltResult {
+  return {
+    text: say(rl, {
+      en: 'I can match your style once I have seen your Reels. Connect Instagram, or upload three to five Reels, on the Style page. It takes a minute.',
+      hinglish:
+        'Aapki style match karne ke liye pehle aapki Reels dekhni hongi. Style page par Instagram connect karo, ya 3 se 5 Reels upload karo.',
+      hi: 'आपकी स्टाइल मैच करने के लिए पहले आपकी रील्स देखनी होंगी। Style पेज पर Instagram कनेक्ट करें, या 3 से 5 रील्स अपलोड करें।',
+    }),
+    route: '/app/style',
+    chips: ['Add captions'],
+  }
+}
+
+/**
+ * "Match my style": one plan, all ordinary ops. A Reel from the highlight that opens the way this creator opens, with fillers
+ * and pauses tightened to the pace they cut at, and captions in the look they use most. Built by code from the profile's
+ * numbers; the model only chose to do it. With no profile it says how to get one.
+ */
+export function matchMyStylePlan(ctx: PlannerContext, rl: RL): BuiltResult {
+  const style = ctx.style
+  if (!style?.connected) return noStyleYet(rl)
+
+  const look = profileStyleId(style)
+  const pace = paceFor(style.cutPace)
+  const hook = closestHook(ctx, style.hookTimingSec)
+  // The profile was asked for by name, so it applies whatever the toggle says; the captions use its look if it has one.
+  const mine: PlannerContext = { ...ctx, applyStyle: true, style }
+  const built = hook
+    ? reelPlan(
+        mine,
+        {
+          srcFrom: hook.start,
+          srcTo: hook.end,
+          title: hook.title,
+          fast: true,
+          fillers: pace.fillers,
+          pauseGapSec: pace.pauseGapSec,
+          hookScore: hook.hookScore,
+        },
+        rl,
+      )
+    : captionsAndPace(mine, rl, look, pace)
+  if (!built.plan) return built
+
+  const lookName = look ? captionStyle(look).name : null
+  const every = style.cutPace >= 0.5 ? (10 / style.cutPace).toFixed(1) : null
+  const few = style.confidence === 'low'
+  const title = say(rl, {
+    en: 'Match my style',
+    hinglish: 'Meri style lagao',
+    hi: 'मेरी स्टाइल लगाएं',
+  })
+  const description =
+    say(rl, {
+      en: `${lookName ? `${lookName} captions` : 'Your current caption look'}, ${every ? `pauses tightened to your cut every ${every} seconds` : 'pauses left roomy, as you like them'}${hook ? `, from the part that opens the way yours do` : ''}.`,
+      hinglish: `${lookName ? `${lookName} captions` : 'Abhi wala caption look'}, ${every ? `aapke har ${every} second ke cut ke hisaab se pauses tight` : 'pauses khule hue, jaise aapko pasand hain'}${hook ? `, wo hissa jo aapki tarah shuru hota hai` : ''}.`,
+      hi: `${lookName ? `${lookName} कैप्शन` : 'अभी वाला कैप्शन लुक'}${every ? `, आपके हर ${every} सेकंड के कट के हिसाब से पॉज़ छोटे` : ''}।`,
+    }) +
+    (look ? ` ${usingYourStyle(rl, look)}` : '') +
+    (few ? ` ${fewReels(rl)}` : '')
+  const text =
+    say(rl, {
+      en: `Your top Reels use ${lookName ?? 'their own'} captions and cut roughly ${every ? `every ${every} seconds` : 'rarely'}. Here is that look.`,
+      hinglish: `Aapki top Reels mein ${lookName ?? 'apne'} captions hain aur ${every ? `har ${every} second mein cut aata hai` : 'cut kam aata hai'}. Ye raha wahi look.`,
+      hi: `आपकी टॉप रील्स में ${lookName ?? 'अपने'} कैप्शन हैं। यह रहा वही लुक।`,
+    }) + (few ? ` ${fewReels(rl)}` : '')
+  return {
+    ...built,
+    text,
+    plan: {
+      ...built.plan,
+      title,
+      description,
+      summary: [
+        ...(lookName ? [{ label: 'Captions', value: lookName, tone: 'saffron' as const }] : []),
+        ...(every ? [{ label: 'Cut pace', value: `${every}s`, tone: 'teal' as const }] : []),
+        ...built.plan.summary.filter((c) => c.label !== 'Style'),
+      ],
+    },
+    ...(few ? { route: '/app/style' } : {}),
+  }
+}
+
+/** With no highlight to build a Reel from: the current edit with the creator's captions and pace. */
+function captionsAndPace(
+  ctx: PlannerContext,
+  rl: RL,
+  look: string | null,
+  pace: ReturnType<typeof paceFor>,
+): BuiltResult {
+  const ops: TimelineOp[] = []
+  let tl = ctx.tl
+  if (pace.fillers) {
+    const f = removeFillersOp(tl, ctx.tr.words)
+    if (f) {
+      ops.push(f.op)
+      tl = applyOp(tl, f.op).timeline
+    }
+  }
+  const p = trimPausesOp(tl, ctx.tr.words, pace.pauseGapSec, Math.min(0.3, pace.pauseGapSec / 2))
+  if (p) {
+    ops.push(p.op)
+    tl = applyOp(tl, p.op).timeline
+  }
+  const caps = captionsForTimeline(tl, ctx.tr.words)
+  if (caps.length) ops.push({ type: 'addCaptions', items: caps, replace: true })
+  if (look) ops.push({ type: 'setCaptionStyle', styleId: look })
+  if (!ops.length) {
+    return {
+      text: say(rl, {
+        en: 'Your edit already looks like your style.',
+        hinglish: 'Aapka edit pehle se aapki style jaisa hai.',
+        hi: 'आपका एडिट पहले से आपकी स्टाइल जैसा है।',
+      }),
+    }
+  }
+  return {
+    text: '',
+    plan: makePlan({
+      title: '',
+      description: '',
+      op: { type: 'batch', ops, label: 'Match my style' },
+      strip: stripFromCuts(ctx.tl, ops.flatMap(cutRanges)),
+      summary: [],
+      focus: 0,
+    }),
   }
 }
 

@@ -84,10 +84,20 @@ export interface ChapterLite {
   end: number
 }
 
+/**
+ * What the assistant knows about the creator's style: numbers and caption style ids, and one sentence. Never the handle, the
+ * Reels, their numbers or anything from Instagram: nothing of the kind is in this type, so none can reach a prompt.
+ */
 export interface StyleLite {
   connected: boolean
+  /** Editor caption style ids (or `custom`), biggest share first. */
   captionStyles: Array<{ id: string; share: number }>
+  /** Cuts per 10 seconds. */
   cutPace: number
+  /** Seconds to the first spoken word or strong picture change in the creator's best Reels. */
+  hookTimingSec: number
+  confidence: 'low' | 'medium' | 'high'
+  summary?: string
 }
 
 /** Everything a builder needs to know about the project right now. */

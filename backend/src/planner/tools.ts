@@ -10,12 +10,18 @@ import { CAPTION_STYLE_IDS } from './caption-styles.js'
 const ID = z.string().min(1).max(40)
 const SENTENCE_ID = z.string().regex(/^s\d{1,6}$/, 'a sentence id like s12')
 const none = z.strictObject({})
+/** True when the person asked for their own style ("in my style"), which applies it even if the toggle is off. */
+const useMyStyle = z.boolean().optional()
 
 export const toolSchemas = {
   remove_fillers: none,
   trim_pauses: z.strictObject({ maxPauseSec: z.number().min(0.3).max(3).optional() }),
-  add_captions: z.strictObject({ styleId: z.enum(CAPTION_STYLE_IDS).optional() }),
-  set_caption_style: z.strictObject({ styleId: z.enum(CAPTION_STYLE_IDS) }),
+  add_captions: z.strictObject({ styleId: z.enum(CAPTION_STYLE_IDS).optional(), useMyStyle }),
+  set_caption_style: z.strictObject({
+    styleId: z.enum(CAPTION_STYLE_IDS).optional(),
+    useMyStyle,
+  }),
+  match_my_style: none,
   make_reel: z.strictObject({
     source: z
       .strictObject({
@@ -26,6 +32,7 @@ export const toolSchemas = {
       .optional(),
     lengthSec: z.number().int().min(5).max(180).optional(),
     pace: z.enum(['fast', 'calm']).optional(),
+    useMyStyle,
   }),
   find_moment: z.strictObject({ query: z.string().min(2).max(200) }),
   best_hooks: none,
@@ -59,10 +66,14 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   remove_fillers: 'Cut the filler words (um, matlab, basically ...) that are still in the edit.',
   trim_pauses:
     'Shorten the long pauses to a natural beat. maxPauseSec: pauses longer than this are shortened (default 0.7).',
-  add_captions: 'Add captions to the edit, optionally in a given caption style.',
-  set_caption_style: 'Change the look of the captions to one of the caption styles.',
+  add_captions:
+    'Add captions to the edit, optionally in a given caption style. Set useMyStyle when the person asks for captions in their own style.',
+  set_caption_style:
+    'Change the look of the captions to one of the caption styles. Give no styleId, and set useMyStyle, when the person asks for their own caption look.',
+  match_my_style:
+    'Edit the way this creator edits: a Reel from the part that opens like their best Reels, pauses tightened to how often they cut, captions in their usual look. Takes no arguments. Use it when they ask to match, apply or use their style.',
   make_reel:
-    'Build a short vertical Reel. Give only what the person said: leave out source, lengthSec or pace if they did not say it (the person will be asked). source: a highlight (id from highlights), a chapter (id from chapters), a search (query), the playhead, or the whole video.',
+    'Build a short vertical Reel. Give only what the person said: leave out source, lengthSec or pace if they did not say it (the person will be asked). Set useMyStyle when they ask for it in their own style. source: a highlight (id from highlights), a chapter (id from chapters), a search (query), the playhead, or the whole video.',
   find_moment:
     'Find where the person talks about something, by what was said. Shows the moments in the Search tab.',
   best_hooks: 'Show the strongest hooks (highlights) and build a Reel from the best one.',

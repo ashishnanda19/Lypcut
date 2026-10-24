@@ -16,6 +16,7 @@ import {
   transcriptSentences,
   transcripts,
   transcriptWords,
+  styleProfiles,
   userPreferences,
 } from '../db/schema/index.js'
 import { dataBlock } from '../llm/data-block.js'
@@ -23,7 +24,15 @@ import { requireReady } from '../modules/content/service.js'
 import { naturalText } from '../modules/search/semantic.js'
 import { TimelineService } from '../modules/timeline/service.js'
 import { CAPTION_STYLES } from './caption-styles.js'
-import type { ChapterLite, HighlightLite, Lang, PlannerContext, RL, SentenceLite } from './types.js'
+import type {
+  ChapterLite,
+  HighlightLite,
+  Lang,
+  PlannerContext,
+  RL,
+  SentenceLite,
+  StyleLite,
+} from './types.js'
 
 /** Everything about a project the assistant reads, loaded once per request. */
 export interface ProjectData {
@@ -38,6 +47,8 @@ export interface ProjectData {
   sentences: SentenceLite[]
   highlights: HighlightLite[]
   chapters: ChapterLite[]
+  /** The creator's learned style, if they have one. Whether the model sees it depends on the request. */
+  style?: StyleLite
 }
 
 /** Words of a transcript do not change, so the last few loaded are kept: loading tens of thousands of rows is the slow part. */
@@ -101,6 +112,8 @@ export async function loadProjectData(
     wordCache.set(tr.id, words)
   }
 
+  const [profile] = await db.select().from(styleProfiles).where(eq(styleProfiles.userId, userId))
+
   const sentenceRows = await db
     .select()
     .from(transcriptSentences)
@@ -143,12 +156,34 @@ export async function loadProjectData(
       hookScore: h.hookScore,
       reason: h.reason,
     })),
+    ...(profile ? { style: toStyleLite(profile) } : {}),
     chapters: ch.map((c) => ({
       id: `ch_${c.idx}`,
       title: c.title,
       start: c.startSec,
       end: c.endSec,
     })),
+  }
+}
+
+/** The profile row, cut down to what the assistant may use. Fields are read one by one, so nothing else can come along. */
+export function toStyleLite(row: typeof styleProfiles.$inferSelect): StyleLite {
+  const p = row.profile as Partial<{
+    captionStyles: Array<{ id: string; share: number }>
+    cutPace: number
+    hookTimingSec: number
+    summary: string
+  }>
+  return {
+    connected: true,
+    captionStyles: (p.captionStyles ?? []).map((c) => ({
+      id: String(c.id),
+      share: Number(c.share),
+    })),
+    cutPace: Number(p.cutPace ?? 0),
+    hookTimingSec: Number(p.hookTimingSec ?? 0),
+    confidence: row.confidence,
+    ...(p.summary ? { summary: String(p.summary) } : {}),
   }
 }
 
@@ -162,6 +197,7 @@ export function plannerContext(
     highlights: data.highlights,
     chapters: data.chapters,
     lang: data.language,
+    ...(data.style ? { style: data.style } : {}),
     applyStyle: o.applyStyle,
     playhead: o.playhead,
     planId: o.planId,
@@ -206,7 +242,8 @@ export interface DataBlockInput {
   data: ProjectData
   reply: RL
   playhead: number
-  style?: { captionStyleId: string } | undefined
+  /** The creator's style, to show the model. Pass it only when the person has asked for their style to be applied. */
+  style?: StyleLite | undefined
 }
 
 /**
@@ -269,7 +306,18 @@ export function buildDataBlock({ data, reply, playhead, style }: DataBlockInput)
     ...(truncated
       ? { note: 'Only the sentences around the playhead are listed: the video is long.' }
       : {}),
-    ...(style ? { style } : {}),
+    // Only what the model needs to default sensibly: the usual look, how fast they cut, how soon they start, how sure we are.
+    ...(style
+      ? {
+          myStyle: {
+            captionStyles: style.captionStyles.slice(0, 3).map((c) => c.id),
+            cutPaceCutsPer10Sec: style.cutPace,
+            hookTimingSec: style.hookTimingSec,
+            confidence: style.confidence,
+            ...(style.summary ? { summary: style.summary } : {}),
+          },
+        }
+      : {}),
   }
   return dataBlock(payload)
 }
