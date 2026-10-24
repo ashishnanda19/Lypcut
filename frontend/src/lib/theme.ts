@@ -3,9 +3,10 @@ import { create } from 'zustand'
 export type Theme = 'dark' | 'light'
 const KEY = 'lypcut-theme'
 
+/** Light unless the person has chosen dark (index.html sets the attribute before first paint). */
 function readInitial(): Theme {
-  if (typeof document === 'undefined') return 'dark'
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+  if (typeof document === 'undefined') return 'light'
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
 }
 
 function apply(theme: Theme) {

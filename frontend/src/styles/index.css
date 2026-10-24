@@ -3,7 +3,7 @@
 /* ------------------------------------------------------------------
    Lypcut design tokens
    Colour world: deep ink surfaces, saffron accent, soft teal secondary,
-   coral reserved for the cut-line. Dark is default; light via [data-theme].
+   coral reserved for the cut-line. Light is the default (index.html sets data-theme); dark via [data-theme='dark'].
    ------------------------------------------------------------------ */
 
 :root,
