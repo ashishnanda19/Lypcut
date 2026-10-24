@@ -3,7 +3,7 @@ import type { Database } from '../db/client.js'
 import { llmUsage } from '../db/schema/index.js'
 import { startOfMonthUtc } from '../lib/plans.js'
 
-export type LlmKind = 'planner' | 'highlights' | 'chapters' | 'embed'
+export type LlmKind = 'planner' | 'highlights' | 'chapters' | 'embed' | 'style'
 
 export interface UsageRow {
   requestId?: string

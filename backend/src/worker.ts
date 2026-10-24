@@ -5,6 +5,7 @@ import { loadConfigOrExit, onShutdown } from './lib/bootstrap.js'
 import { loggerOptions } from './lib/logger.js'
 import { configureMedia } from './media/ffmpeg.js'
 import { createProcessingWorker } from './workers/processing.js'
+import { createStyleWorker } from './workers/style.js'
 import { createTranscriptionProvider } from './transcription/providers/index.js'
 import {
   createMaintenanceWorker,
@@ -44,7 +45,9 @@ health.listen(config.WORKER_HEALTH_PORT, config.HOST)
 configureMedia({ ffmpeg: config.FFMPEG_BIN, ffprobe: config.FFPROBE_BIN })
 const ctx: WorkerContext = { deps, log }
 const maintenance = createMaintenanceWorker(ctx)
-const processing = createProcessingWorker(ctx, createTranscriptionProvider(config))
+const transcription = createTranscriptionProvider(config)
+const processing = createProcessingWorker(ctx, transcription)
+const style = createStyleWorker(ctx, transcription)
 await scheduleMaintenance(ctx)
 
 log.info({ port: config.WORKER_HEALTH_PORT }, 'worker started')
@@ -53,7 +56,7 @@ onShutdown(config.SHUTDOWN_TIMEOUT_MS, async (signal) => {
   log.info({ signal }, 'worker shutting down')
   draining = true
   // close() lets a running job finish and stops taking new ones.
-  await Promise.all([maintenance.close(), processing.close()])
+  await Promise.all([maintenance.close(), processing.close(), style.close()])
   await new Promise<void>((resolve) => health.close(() => resolve()))
   await closeDeps(deps)
   log.info('worker shutdown complete')

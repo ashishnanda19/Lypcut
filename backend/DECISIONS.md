@@ -594,3 +594,38 @@ Consequences:
 1. The Instagram path never downloads video; style signals (hook timing, cut pace, captions, fonts, colours) come from uploaded files only. See the report to you for how the two paths combine.
 2. Every Meta call sits behind `InstagramClient`; the real client's unconfirmed behaviours (account type, Reel detection, missing metrics) are isolated in it and covered by recorded-response tests, so a surprise is a one-file fix.
 3. A missing metric is `null`, never 0, from the API to the database to the score.
+
+## Phase 3, step 3: the analysis engine
+
+- **Code measures; the model only labels.** Per Reel: probe, scene cuts (the same detector and threshold as Phase 1), audio and speech recognition
+  (the same code), six frames read as pixels. A model is used for two things only, both with `LLM_MODEL_BATCH`, both recorded in `llm_usage` with
+  kind `style`: one call per analysis run that labels the Reels whose captions the rules could not place, and one sentence at the end.
+- **Definitions.** _Cut pace_ is cuts per ten seconds (cuts in the first tenth of a second are the video starting). _Hook timing_ is the earlier of the first
+  spoken word and the first strong picture change (score 0.45 or more), null if neither exists. _Speech rate_ is words per minute over the time
+  between the first and last word, and is not worked out for under three seconds of speech. All of these are in `src/style/analysis/config.ts`.
+- **Caption looks are read from colour and shape, not from text.** There is no text recognition and no new dependency. The editor's looks differ in a
+  coloured pill behind the spoken word, a dark box, a yellow word with a black outline, a teal glow, a thin coral underline; the rules look for those
+  in the lower and middle bands of six frames. They answer _matched_, _ambiguous_ or _none_ and never guess: white text alone fits no look, so it is
+  ambiguous, and an ambiguous Reel is `custom` unless a model labels it. `minimal` is only ever reached through the model, because plain white text is
+  also what an unstyled caption looks like. **These rules are tuned on synthetic frames and FFmpeg fixtures, not on real Reels.** The first thing to do
+  with real Reels is look at how many come out ambiguous; the accent colours are checked against the editor's file by a test, so they cannot drift quietly.
+- **Fonts are a closed list** of what the editor loads (Inter, Noto Sans Devanagari). Without a model the font comes from the script of the speech, a
+  stated rule, not a reading of the letters.
+- **The score.** Each signal (average watch share, saves, shares, comments, likes per view) is ranked among the creator's own Reels, then the ranks are
+  averaged with the weights in `config.ts` (0.35, 0.25, 0.25, 0.10, 0.05). A Reel needs two signals, at least 100 views when the views are known, and
+  must be 3 days old if it has a posting date. A metric that is missing is left out of that Reel's average, never counted as 0.
+- **Winners.** The best `ceil(n / 3)` scored Reels, never fewer than three, weighted by score. With fewer than three scored Reels (including none)
+  nothing can be ranked, so every Reel counts equally and the profile is `low` confidence. Confidence is `medium` at five Reels with three having
+  numbers and `high` at ten with eight.
+- **The profile is learned from measured Reels.** An Instagram Reel known only by its numbers helps rank, but cannot say how it was cut, so it cannot be a
+  winner until its file has been uploaded and measured (see the hybrid path in the Step 1 report).
+- **Idempotent and resumable.** A Reel is skipped when its file's hash and the algorithm version already have an analysis. When the upload recorded the
+  file's hash, the file is not even fetched. A run that stops halfway leaves unfinished Reels `analysing`, which the next run picks up. A Reel that cannot
+  be measured (too long, not a video, no file) is marked `failed` with a reason and does not fail the job; an outage (storage, speech recognition)
+  does, and the queue retries it.
+- **Style work has its own queue** (`style`, `STYLE_CONCURRENCY`, default 1) so learning a style never takes a worker from an edit.
+- **The summary sentence** is written from five figures (timing, seconds between cuts, top look, number of Reels, confidence) in the person's language. A
+  sentence is kept only if every number in it is one of the figures (or a rounding), no number is spelled out, and it is one line under 200 characters;
+  otherwise there is no sentence, and the profile is complete without one. It is written again only when the figures change.
+- **Model input.** The captions call sends up to four small JPEG frames per Reel (360 px wide), for at most twelve Reels, and the names of the Reels' ids. It
+  sends no handle, number, token or file name. The model answers from closed lists; anything else it says is dropped.

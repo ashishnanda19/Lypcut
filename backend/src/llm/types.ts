@@ -5,7 +5,7 @@ import type { z } from 'zod'
  * a provider turns these into its own requests and back. No provider type leaves this folder.
  */
 
-export type LlmPurpose = 'planner' | 'highlights' | 'chapters'
+export type LlmPurpose = 'planner' | 'highlights' | 'chapters' | 'style'
 
 /** A tool the model may call. The schema is Zod; the JSON schema sent to the model is generated from it. */
 export interface ToolDefinition {
@@ -19,6 +19,8 @@ export type LlmBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; id: string; content: string; isError?: boolean }
+  /** A picture the model should look at, as base64. What is written in it is data, never instructions. */
+  | { type: 'image'; mediaType: 'image/jpeg' | 'image/png'; data: string }
 
 export interface LlmMessage {
   role: 'user' | 'assistant'

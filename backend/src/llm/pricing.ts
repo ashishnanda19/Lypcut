@@ -40,3 +40,31 @@ export function estimateTokens(text: string): number {
   const dev = text.match(DEVANAGARI)?.length ?? 0
   return Math.ceil(dev + (text.length - dev) / 3)
 }
+
+/** What a picture costs the model, roughly. Used only to size a request before it is sent. */
+export const IMAGE_TOKENS = 900
+
+/**
+ * A rough token count for a whole request. Pictures are counted as a fixed cost, not as the base64 text that carries them,
+ * which would be many times too large.
+ */
+export function estimateRequestTokens(req: {
+  system: string
+  context?: string
+  messages: Array<{ content: string | Array<{ type: string }> }>
+}): number {
+  const messages = JSON.stringify(req.messages, (key, value) =>
+    key === 'data' && typeof value === 'string' && value.length > 512 ? '' : value,
+  )
+  const images = req.messages.reduce(
+    (n, m) =>
+      n + (typeof m.content === 'string' ? 0 : m.content.filter((b) => b.type === 'image').length),
+    0,
+  )
+  return (
+    estimateTokens(req.system) +
+    estimateTokens(req.context ?? '') +
+    estimateTokens(messages) +
+    images * IMAGE_TOKENS
+  )
+}

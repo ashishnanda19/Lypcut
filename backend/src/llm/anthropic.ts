@@ -132,6 +132,8 @@ function toBlock(b: LlmBlock): Anthropic.ContentBlockParam {
       return { type: 'text', text: b.text }
     case 'tool_call':
       return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
+    case 'image':
+      return { type: 'image', source: { type: 'base64', media_type: b.mediaType, data: b.data } }
     case 'tool_result':
       return {
         type: 'tool_result',

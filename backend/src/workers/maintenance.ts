@@ -67,6 +67,10 @@ export async function reconcileQueuedJobs(ctx: WorkerContext): Promise<number> {
           'processing',
           'export',
           'otio',
+          'style_sync',
+          'style_analysis',
+          'style_refresh',
+          'style_deletion',
         ]),
       ),
     )

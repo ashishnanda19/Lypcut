@@ -26,7 +26,7 @@ export type {
 export { FakeProvider } from './fake.js'
 export type { FakeAnswer, FakeHandler } from './fake.js'
 export { FakeEmbeddingProvider } from './fake-embedding.js'
-export { estimateCostUsd, estimateTokens } from './pricing.js'
+export { estimateCostUsd, estimateRequestTokens, estimateTokens } from './pricing.js'
 
 export type EmbeddingConfig = Pick<
   Config,

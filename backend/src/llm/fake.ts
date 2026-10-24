@@ -1,4 +1,4 @@
-import { estimateTokens } from './pricing.js'
+import { estimateRequestTokens, estimateTokens } from './pricing.js'
 import type { GenerateRequest, GenerateResult, LlmProvider } from './types.js'
 
 /** What a handler answers with. The provider adds the model name and token counts. */
@@ -22,10 +22,7 @@ export class FakeProvider implements LlmProvider {
   async generate(req: GenerateRequest): Promise<Omit<GenerateResult, 'latencyMs'>> {
     const handler = this.handlers[req.purpose]
     const answer: FakeAnswer = handler ? handler(req) : { text: '' }
-    const input =
-      estimateTokens(req.system) +
-      estimateTokens(req.context ?? '') +
-      estimateTokens(JSON.stringify(req.messages))
+    const input = estimateRequestTokens(req)
     return {
       text: answer.text,
       toolCall: answer.toolCall,

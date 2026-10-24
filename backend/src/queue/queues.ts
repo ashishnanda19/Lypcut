@@ -6,6 +6,8 @@ import { bullConnectionOptions, createRedis } from './connection.js'
 export const QUEUES = {
   processing: 'processing',
   maintenance: 'maintenance',
+  /** Style learning: measuring a creator's Reels. Its own queue, so it can run at a lower concurrency than editing work. */
+  style: 'style',
 } as const
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES]
@@ -31,6 +33,7 @@ export const jobOptions = (
 export interface Queues {
   processing: Queue<JobData>
   maintenance: Queue<JobData>
+  style: Queue<JobData>
   close(): Promise<void>
 }
 
@@ -43,11 +46,13 @@ export function createQueues(
     new Queue<JobData>(name, { connection, defaultJobOptions: jobOptions(config) })
   const processing = make(QUEUES.processing)
   const maintenance = make(QUEUES.maintenance)
+  const style = make(QUEUES.style)
   return {
     processing,
     maintenance,
+    style,
     close: async () => {
-      await Promise.all([processing.close(), maintenance.close()])
+      await Promise.all([processing.close(), maintenance.close(), style.close()])
       connection.disconnect()
     },
   }

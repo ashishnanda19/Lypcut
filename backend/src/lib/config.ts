@@ -185,6 +185,9 @@ export const envSchema = z
     /** Earlier keys, same form, comma separated. They only open what they sealed; the current key seals everything new. */
     TOKEN_ENCRYPTION_OLD_KEYS: csv.default([]),
 
+    /** Style analysis jobs at once. Lower than editing work, so learning a style never slows someone's edit. */
+    STYLE_CONCURRENCY: z.coerce.number().int().min(1).default(1),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })

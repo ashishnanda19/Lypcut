@@ -2,7 +2,7 @@ import type { Config } from '../lib/config.js'
 import type { Log } from '../lib/log.js'
 import type { Database } from '../db/client.js'
 import { CircuitBreaker } from './breaker.js'
-import { estimateCostUsd, estimateTokens } from './pricing.js'
+import { estimateCostUsd, estimateRequestTokens } from './pricing.js'
 import { withRetry } from './retry.js'
 import { LlmError, type GenerateRequest, type GenerateResult, type LlmProvider } from './types.js'
 import { recordUsage, spendThisMonth, type LlmKind } from './usage.js'
@@ -40,7 +40,12 @@ export interface LlmDeps {
   random?: () => number
 }
 
-const KIND_OF = { planner: 'planner', highlights: 'highlights', chapters: 'chapters' } as const
+const KIND_OF = {
+  planner: 'planner',
+  highlights: 'highlights',
+  chapters: 'chapters',
+  style: 'style',
+} as const
 
 /**
  * The one door to the language model. It chooses who answers (the real model, or the offline one when the real one is
@@ -71,10 +76,7 @@ export class Llm {
     signal?: AbortSignal,
   ): Promise<LlmReply> {
     const kind: LlmKind = KIND_OF[req.purpose]
-    const inputEstimate =
-      estimateTokens(req.system) +
-      estimateTokens(req.context ?? '') +
-      estimateTokens(JSON.stringify(req.messages))
+    const inputEstimate = estimateRequestTokens(req)
     if (inputEstimate > this.d.config.LLM_MAX_INPUT_TOKENS) {
       throw new LlmError('too_large', 'That request is too large for the model.')
     }
