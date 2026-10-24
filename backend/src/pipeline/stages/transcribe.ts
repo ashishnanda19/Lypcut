@@ -10,6 +10,7 @@ import { buildTranscript } from '../../transcription/normalize.js'
 import { TranscriptionError } from '../../transcription/types.js'
 import { insertInChunks, languageLabel, type Stage } from '../context.js'
 import { PermanentError } from '../errors.js'
+import { contentHashOf } from '../../highlights/input.js'
 import { downloadTo } from '../workdir.js'
 
 const TRANSCRIBE_FAILED = "We couldn't transcribe this audio."
@@ -24,7 +25,7 @@ export const transcribe: Stage = {
   key: 'transcribe',
   step: 2,
   from: 55,
-  to: 85,
+  to: 80,
   async run(ctx) {
     const { db } = ctx.deps.database
 
@@ -75,6 +76,7 @@ export const transcribe: Stage = {
           model: ctx.provider.model,
           speakers: built.speakers,
           wordCount: built.words.length,
+          contentHash: contentHashOf(built.words),
         })
         .returning({ id: transcripts.id })
       const transcriptId = row!.id

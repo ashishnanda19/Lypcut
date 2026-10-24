@@ -307,13 +307,10 @@ describe('a successful run', () => {
     expect(quiet.length).toBeGreaterThanOrEqual(1)
     expect(quiet.some((q) => q.startSec > 4 && q.startSec < 5.5)).toBe(true)
 
+    // A 15 second recording cannot hold a highlight (they run 15 to 60 seconds), so there are none; the longer
+    // recording in insights.test.ts covers finding them.
     const hooks = await db().select().from(highlights).where(eq(highlights.projectId, projectId))
-    expect(hooks.length).toBeGreaterThanOrEqual(1)
-    for (const h of hooks) {
-      expect(h.hookScore).toBeGreaterThanOrEqual(0)
-      expect(h.reason.length).toBeGreaterThan(5)
-      expect(h.source).toBe('heuristic')
-    }
+    expect(hooks).toEqual([])
     const parts = await db()
       .select()
       .from(chapters)
@@ -396,6 +393,8 @@ describe('when things go wrong', () => {
       split_proxy: 1,
       audio: 1,
       transcribe: 2,
+      hooks: 1,
+      chapters: 1,
       index: 1,
       timeline: 1,
       ready: 1,

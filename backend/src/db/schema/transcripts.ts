@@ -36,6 +36,11 @@ export const transcripts = pgTable(
     model: text(),
     speakers: jsonb().$type<SpeakerRow[]>().notNull().default([]),
     wordCount: integer().notNull().default(0),
+    /** SHA-256 over the words and their times. What highlights, chapters and embeddings are keyed by. */
+    contentHash: text(),
+    /** The content hash (and algorithm version) the stored highlights were computed for. Null: not yet, or only roughly. */
+    highlightsHash: text(),
+    chaptersHash: text(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('transcripts_project_uq').on(t.projectId)],

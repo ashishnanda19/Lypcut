@@ -6,6 +6,7 @@ import { Storage } from '../lib/storage.js'
 import pino from 'pino'
 import { createEmbeddingFallback, createLlm } from '../llm/index.js'
 import { loggerOptions } from '../lib/logger.js'
+import { fakeChapters, fakeHighlights } from '../highlights/fake.js'
 import type { AppDeps } from './types.js'
 
 export function createDeps(config: Config): AppDeps {
@@ -16,7 +17,11 @@ export function createDeps(config: Config): AppDeps {
     redis: createRedis(config, { maxRetriesPerRequest: 2 }),
     storage: new Storage(config),
     queues: createQueues(config),
-    llm: createLlm(config, { db: database.db, log: pino(loggerOptions(config, 'llm')) }),
+    llm: createLlm(config, {
+      db: database.db,
+      log: pino(loggerOptions(config, 'llm')),
+      handlers: { highlights: fakeHighlights, chapters: fakeChapters },
+    }),
     embeddings: createEmbeddingFallback(),
   }
 }

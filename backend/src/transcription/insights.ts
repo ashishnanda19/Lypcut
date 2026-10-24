@@ -97,7 +97,7 @@ const CONTRAST = fold(['nahi', 'not', 'but', 'lekin', 'magar', 'par', 'instead']
 
 const SENTENCE_END = /[.?!।॥…]["'”’)\]]*$/
 
-interface Scored {
+export interface Scored {
   from: number
   to: number
   start: number
@@ -167,7 +167,7 @@ function windowFrom(
   return { to, end }
 }
 
-function scoreWindow(
+export function scoreWindow(
   sentences: InsightSentence[],
   words: InsightWord[],
   i: number,
@@ -225,7 +225,7 @@ function scoreWindow(
   }
 }
 
-function reasonFor(signals: Scored['signals']): string {
+export function reasonFor(signals: Scored['signals']): string {
   if (signals.has('question') && signals.has('number')) {
     return 'Opens with a question and a hard number: it works as a hook on its own.'
   }
@@ -306,7 +306,7 @@ export function findChapters(
 }
 
 /** The first few words of the opening sentence, as a title. */
-function chapterTitle(text: string): string {
+export function chapterTitle(text: string): string {
   const head = text.split(/\s+/).slice(0, 6).join(' ')
   return titleFrom(head, 40)
 }

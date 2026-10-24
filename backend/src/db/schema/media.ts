@@ -140,7 +140,7 @@ export const highlights = pgTable(
     hookScore: integer().notNull(),
     reason: text().notNull(),
     thumbSeed: text().notNull(),
-    /** 'heuristic' now; 'llm' once the assistant phase lands. */
+    /** 'llm' (a real model scored it), 'offline' (the built-in model), or 'heuristic' (the cheap signals alone). */
     source: text().notNull().default('heuristic'),
     createdAt: createdAt(),
   },
@@ -162,6 +162,8 @@ export const chapters = pgTable(
     title: text().notNull(),
     startSec: doublePrecision().notNull(),
     endSec: doublePrecision().notNull(),
+    /** 'llm' (a real model titled it), 'offline' (the built-in model), or 'heuristic' (the first words). */
+    source: text().notNull().default('heuristic'),
     createdAt: createdAt(),
   },
   (t) => [

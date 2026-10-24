@@ -9,6 +9,8 @@ import { STEP_LABELS, type PipelineContext, type Stage } from './context.js'
 import { GENERIC_FAILURE, PermanentError } from './errors.js'
 import { Reporter } from './reporter.js'
 import { audio } from './stages/audio.js'
+import { chaptersStage } from './stages/chapters.js'
+import { hooks } from './stages/hooks.js'
 import { indexStage } from './stages/index-stage.js'
 import { probe } from './stages/probe.js'
 import { ready } from './stages/ready.js'
@@ -28,6 +30,8 @@ export const STAGES: Stage[] = [
   splitProxy,
   audio,
   transcribe,
+  hooks,
+  chaptersStage,
   indexStage,
   timelineStage,
   ready,

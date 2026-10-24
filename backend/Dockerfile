@@ -46,6 +46,8 @@ COPY --from=build /packages/timeline-core/dist ./node_modules/@lypcut/timeline-c
 COPY --from=build /app/dist ./dist
 COPY backend/package.json ./
 COPY backend/drizzle ./drizzle
+# The system prompts (versioned files the model layer reads).
+COPY backend/prompts ./prompts
 USER node
 EXPOSE 4000 4001
 ENTRYPOINT ["/usr/bin/tini", "--"]

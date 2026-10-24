@@ -49,11 +49,27 @@ describe('migrations go up and down cleanly', () => {
     expect(await applied()).toBeGreaterThanOrEqual(2)
   })
 
+  const hasColumn = async (table: string, column: string) =>
+    (
+      await pool.query(
+        "select 1 from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2",
+        [table, column],
+      )
+    ).rowCount === 1
+
   it('undoes the newest migration and only that one', async () => {
     const before = await applied()
+    expect(await hasColumn('transcripts', 'content_hash')).toBe(true)
     const undone = await migrateDown(pool, folder, 1)
     expect(undone).toHaveLength(1)
     expect(await applied()).toBe(before - 1)
+    expect(await hasColumn('transcripts', 'content_hash')).toBe(false)
+    // The one before it is still there.
+    expect(await tables()).toContain('llm_usage')
+  })
+
+  it('can undo the one before that too', async () => {
+    await migrateDown(pool, folder, 1)
     const t = await tables()
     expect(t).not.toContain('llm_usage')
     expect(t).toContain('users')
