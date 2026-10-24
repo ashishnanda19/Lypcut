@@ -290,6 +290,56 @@ job'}` for anything it will not show). `GET /api/jobs/:id` is the polling fallba
 - **A summary endpoint** (`GET /projects/:id/summary`) returns counts of what was found and the timeline version in one call.
 - **Responses are compressed** (brotli or gzip above 1 KB): transcripts and timelines are large JSON that compresses well.
 
+## Step 9: the front end uses the real API
+
+The front end (`../lypcut`) is switched by `VITE_API_MODE=real|mock` (mock is the default, so the demo still works with no
+server). In real mode the in-browser mock answers only `/api/style/*`. Everything below is a change on the front-end side
+unless it says otherwise; the backend changed in two small ways, noted at the end.
+
+- **The dev server proxies `/api` (and the job socket) to the backend**, so the browser sees one origin and the login
+  cookies are first-party. Nothing about the backend needed CORS for this; the Origin check still applies (the page's origin
+  must be in `CORS_ORIGINS`).
+- **Errors.** The mock sent `{ message, field }`; the backend sends `{ error: { code, message, details } }`. The client reads
+  both, so the forms show the server's message beside the field it names, and the plan-limit codes reach the upload screen.
+- **Sessions.** The client holds no token. An expired access token (15 minutes) triggers one refresh however many calls fail
+  together (the refresh token is single use), then the call is repeated; a refused refresh signs the person out with a
+  message. On load, a stored sign-in is checked with `GET /me`; only a 401 clears it, so a server outage does not log anyone out.
+- **Signup needs 8 characters** (was 6), in the form, the mock and the copy.
+- **Upload flow inverted**, as noted in Step 4: create the project, open an upload, send parts, complete. The new `Uploader`
+  sends three parts at once with `XMLHttpRequest` (for progress), retries a part with backoff, asks for fresh links when
+  storage refuses an expired one, and after a pause or a dropped connection continues from what storage holds. Leaving the
+  page pauses it; "Choose the file again" on the project then finishes the _same_ upload in the _same_ project. A file the
+  plan refuses is reported once, with no Retry, and the empty project it would leave is deleted.
+- **Edits are saved as they are made.** The editor still applies every change at once, then a queue sends it with the
+  version it was based on and adopts the server's answer. A failed save (refused op, a conflict from another tab, an outage)
+  reloads the saved version and says so; the top bar shows Saving, Saved or Not saved, and closing the tab mid-save warns.
+- **Both sides give new clips the same ids.** The server numbers clips an edit creates `i_v<version>_<n>`; the front end's
+  engine now takes the same generator, and walks clips in id order as the server does. The editor knows the next version
+  number (every edit is one, undo and redo are not), so a second edit can name a clip the first created before the server has
+  answered. `npm run parity` now gives both engines the same generator and compares ids too: 1,304 random edits, identical.
+- **The front end's trim bug is fixed** (a start-trim on a clip shorter than 0.1 s pushed it before the start of the
+  timeline); `STRICT=1 npm run parity` reports no known divergences.
+- **History after a reload.** The editor loads the saved versions around where the timeline is (12 behind, 12 ahead), so
+  Undo and Redo work at once and survive a reload. Older edits, and edits on other branches, are listed as "Earlier saved
+  edits": they can be viewed and restored from the server (restore is the real `restore` endpoint, which adds a new version).
+  Within a session, branches behave exactly as before.
+- **The video link is refreshed** shortly before it expires (read from the link's own `X-Amz-Expires`), and never while the
+  video is playing, so a long editing session does not end in a black player.
+- **Export.** The project file (.otio) is downloaded from the server after pending saves land. The MP4 render stays a
+  stand-in, as agreed: against the real backend its progress is simulated in the browser and the download is the editing
+  copy of the original, which the toast says plainly.
+- **Hidden in real mode:** "Add sample projects" and the Google button (the backend answers 501 for Google; a button that always
+  fails looks unfinished).
+- **Logging out** now lands on the landing page. Before, the route guard noticed the missing user first and sent the person
+  to the login form. Found by the new Playwright test.
+- **Not persisted, on purpose:** the chat transcript and the Edit cards. The assistant is still the browser's planner (Phase 2);
+  edits it applies are saved like any other, labelled `ai`.
+- **Two backend changes came out of this step.** (1) Routes with an optional body (`/auth/refresh`, `/auth/logout`,
+  `/uploads/:id/complete`) rejected a request with _no_ body at all, because Fastify hands validation `null`; a browser
+  refreshing with only its cookie hit it. The test client had always sent `{}`, which hid it; it now sends what a real client
+  sends. (2) OpenAPI now has a tag and a summary on every route, enforced by a test, and `API.md` is checked against the code.
+  Also: production refuses the example `AUTH_ACCESS_SECRET` from `.env.example`.
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for

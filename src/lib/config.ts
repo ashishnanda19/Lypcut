@@ -151,6 +151,19 @@ export const envSchema = z
         message: `required when TRANSCRIPTION_PROVIDER=${env.TRANSCRIPTION_PROVIDER}`,
       })
     }
+    // .env.example ships a clearly-labelled development secret; running production on it would make every
+    // login token forgeable by anyone who has read this repository.
+    if (
+      env.NODE_ENV === 'production' &&
+      /local-development|change-me/i.test(env.AUTH_ACCESS_SECRET)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_ACCESS_SECRET'],
+        message:
+          'this is the development example; generate a real one with: openssl rand -base64 48',
+      })
+    }
     if (env.NODE_ENV === 'production' && env.CORS_ORIGINS.includes('*')) {
       ctx.addIssue({
         code: 'custom',

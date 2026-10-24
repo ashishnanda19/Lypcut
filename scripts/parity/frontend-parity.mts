@@ -38,12 +38,9 @@ function prng(seed: number) {
 }
 
 type Tl = any // eslint-disable-line @typescript-eslint/no-explicit-any -- this script compares two engines through their JSON shape
-const canon = (tl: Tl, before: Tl) => {
-  const old = new Set(Object.keys(before.items))
-  const items = Object.values(tl.items).map((i: any) => ({
-    ...i,
-    id: old.has(i.id) ? i.id : 'NEW',
-  }))
+// Both engines are given the same id generator, so new clips must match exactly, ids included.
+const canon = (tl: Tl) => {
+  const items = Object.values(tl.items).map((i: any) => ({ ...i }))
   items.sort((a: any, b: any) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   return JSON.stringify({
     items,
@@ -143,7 +140,7 @@ for (const seed of [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
       b: any,
       bErr: string | null = null
     try {
-      a = fe.applyOp(cur, op)
+      a = fe.applyOp(cur, op, { newId: fe.sequentialIds(`p${seed}_${i}_`) })
     } catch (e) {
       if (e instanceof fe.OpError) aErr = (e as Error).message
       else throw e
@@ -184,7 +181,7 @@ for (const seed of [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
       cur = JSON.parse(JSON.stringify(b.timeline))
       continue
     }
-    if (canon(a.timeline, cur) !== canon(b.timeline, cur)) {
+    if (canon(a.timeline) !== canon(b.timeline)) {
       tally.mismatches++
       console.log('MISMATCH (different result)', JSON.stringify(op).slice(0, 200))
       continue

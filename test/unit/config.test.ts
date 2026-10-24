@@ -54,6 +54,14 @@ describe('loadConfig', () => {
     expect(() => loadConfig(noCreds)).not.toThrow()
   })
 
+  it('rejects the development example secret in production only', () => {
+    const example = { ...base, AUTH_ACCESS_SECRET: 'local-development-secret-change-me-0123456789' }
+    expect(() => loadConfig({ ...example, NODE_ENV: 'production' })).toThrow(/development example/)
+    expect(() => loadConfig({ ...example, NODE_ENV: 'development' })).not.toThrow()
+    const real = { ...base, AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc' }
+    expect(() => loadConfig({ ...real, NODE_ENV: 'production' })).not.toThrow()
+  })
+
   it('rejects a wildcard CORS origin in production', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', CORS_ORIGINS: '*' })).toThrow(
       /wildcard/,
