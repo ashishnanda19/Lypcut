@@ -171,6 +171,16 @@ export class Storage {
     )
   }
 
+  /**
+   * A download URL for the server's own use (ffprobe reading just a file's header). Signed against the
+   * internal endpoint, so it works from inside Docker where the public one does not.
+   */
+  presignInternalGet(key: string, ttlSec: number): Promise<string> {
+    return getSignedUrl(this.s3, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+      expiresIn: ttlSec,
+    })
+  }
+
   /* ----------------------------- multipart ---------------------------- */
 
   async createMultipart(key: string, contentType: string): Promise<string> {

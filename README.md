@@ -68,6 +68,20 @@ npm test
 them, `POST /api/auth/logout` ends the login, `GET/PATCH/DELETE /api/me` read, update and delete the account. Send
 `X-Auth-Mode: bearer` to get tokens in the response body instead (for scripts and mobile apps).
 
+## Uploading a video
+
+```
+POST /api/projects              { fileName }                     -> project (status "uploading")
+POST /api/uploads               { projectId, fileName, sizeBytes } -> upload { id, partSize, totalParts }
+POST /api/uploads/:id/parts     { partNumbers: [1,2,3] }          -> presigned URLs; PUT each part to storage
+GET  /api/uploads/:id                                             -> which parts storage holds (to resume)
+POST /api/uploads/:id/complete  { checksum? }                     -> project "processing" + job
+DELETE /api/uploads/:id                                           -> abort
+```
+
+The free plan allows 10 minutes per video and 3 uploads a month (`src/lib/plans.ts`). Over-limit files are
+refused with `LIMIT_VIDEO_LENGTH` or `LIMIT_MONTHLY_UPLOADS` before any processing is paid for.
+
 ## Configuration
 
 Everything comes from environment variables, validated at startup. The process exits with a clear

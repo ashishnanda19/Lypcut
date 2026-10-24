@@ -72,6 +72,48 @@ Each entry records a choice that was not dictated by the brief, and why.
 - **A JSON `Content-Type` with no body is accepted** (many HTTP clients send it on every request, including DELETE).
   Found by a live smoke test, covered by a regression test.
 
+## Step 4: projects and resumable uploads
+
+- **Create the project, then upload into it.** `POST /projects` makes an empty project (status `uploading`), then
+  `POST /uploads` starts the transfer. The front end's mock did the opposite (a timer, then create), so
+  `NewProjectPage` changes in Step 9. The response of `POST /projects` is `{ project }`; the job arrives with
+  `POST /uploads/:id/complete`, which is when processing actually starts.
+- **Video bytes never touch the API.** The client sends each part straight to storage with a presigned URL
+  (signed for exactly one object, one part and one verb; a GET on it is refused). The API only coordinates.
+- **Storage is the source of truth for what arrived.** `GET /uploads/:id` asks storage which parts it holds and
+  returns them, so a client that closed its tab sends only what is missing. Starting the same file again resumes
+  the open upload (HTTP 200) instead of opening a second.
+- **Completing checks four things, in order:** every part is present and the right size (fixable by the client, so
+  nothing is discarded); the stitched object is the declared size; an optional SHA-256 matches (streamed, so memory
+  stays flat); then ffprobe reads the file. Refusals about the file itself (not a video, too long, bad checksum)
+  delete the object and mark the upload failed, but the project stays waiting so the user can try another file.
+  An infrastructure error leaves the object and reverts the upload to `uploading` so `complete` can be retried.
+- **Validated by content, not by name.** The extension and declared type are an early filter only. ffprobe, run over a
+  presigned URL (so only the header is read, not the whole file), decides: the container must be MP4/MOV, Matroska/WebM
+  or AVI, with a real video stream (cover art does not count). A PNG renamed `.mp4`, random bytes and audio-only files
+  are all refused. ffprobe runs as a child process with a 30 s timeout and a capped output size.
+- **Plan limits come from one `PLANS` object** (`src/lib/plans.ts`), not from the code that enforces them.
+  Free is 10 minutes and 3 uploads a month. Length is checked on the measured duration; the client-reported duration
+  is used only for a fast early refusal. A 1 second tolerance keeps a "10 minute" file that measures 600.04 s inside the limit.
+- **"Per month" means calendar month, UTC.** An upload counts when it is accepted, not when it starts, so a refused or
+  abandoned upload does not use up the allowance. In-flight uploads are counted too, and starts are serialised per
+  user with a Postgres advisory lock, so two tabs cannot both slip under the limit.
+- **Errors the front end can show:** `LIMIT_VIDEO_LENGTH` (details `maxSeconds`, `durationSec`) and
+  `LIMIT_MONTHLY_UPLOADS` (details `max`), both HTTP 403, plus `UNSUPPORTED_MEDIA` 415, `PAYLOAD_TOO_LARGE` 413,
+  `UPLOAD_INCOMPLETE` 422 (details `missing`, `wrongSize`), `CHECKSUM_MISMATCH` 422, `UPLOAD_EXPIRED` 410.
+- **Ownership lives in the query.** Lookups put the owner in the `WHERE` clause (`src/lib/ownership.ts`), so another
+  user's rows are never fetched, and the answer is 404, identical to "does not exist", so ids cannot be probed. A table-driven
+  test lists every route and must grow with each new one.
+- **The project payload is deliberately small.** `assets` holds the original and the proxy only (not one entry per scene
+  clip), and only the proxy has a URL. URLs last an hour (`PRESIGN_GET_TTL_SEC`); a long editing session may need a fresh one,
+  which is why Step 8 adds an asset-URL refresh endpoint.
+- **A scheduled sweep every 15 minutes** aborts uploads past their 24 h deadline (storage stops billing for their parts),
+  fails uploads stuck mid-completion, and deletes projects that never received a video. Deleting a project removes its rows
+  immediately and its files through a job; a queued processing job is withdrawn, and one already running stops at its next stage.
+- **Orphaned multipart uploads.** If the database refuses after storage opened an upload, the API aborts it before replying. For
+  anything that still slips through (a crash), production buckets should also carry an S3 lifecycle rule
+  `AbortIncompleteMultipartUpload` after 2 days; noted in the AWS mapping.
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for

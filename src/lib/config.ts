@@ -80,6 +80,21 @@ export const envSchema = z
       .min(1)
       .default(15 * 60),
 
+    /** Largest file accepted, in bytes. Matches the front end's 8 GB limit. */
+    MAX_UPLOAD_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(8 * 1024 ** 3),
+    /** Multipart part size. S3 requires at least 5 MiB for every part but the last. */
+    UPLOAD_PART_SIZE_MB: z.coerce.number().int().min(5).default(16),
+    /** How long an unfinished upload can be resumed before it is aborted and cleaned up. */
+    UPLOAD_TTL_HOURS: z.coerce.number().int().min(1).default(24),
+    PRESIGN_GET_TTL_SEC: z.coerce.number().int().min(30).default(3600),
+    PRESIGN_PUT_TTL_SEC: z.coerce.number().int().min(60).default(3600),
+    FFPROBE_BIN: z.string().default('ffprobe'),
+    FFMPEG_BIN: z.string().default('ffmpeg'),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })

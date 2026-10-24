@@ -4,6 +4,7 @@ import type { Logger } from 'pino'
 import type { AppDeps } from '../app/types.js'
 import { jobs, sessions } from '../db/schema/index.js'
 import { z } from 'zod'
+import { sweepUploads } from '../modules/uploads/cleanup.js'
 import { enqueueJob } from '../queue/enqueue.js'
 import { bullConnectionOptions, createRedis } from '../queue/connection.js'
 import { QUEUES, type JobData } from '../queue/queues.js'
@@ -16,6 +17,7 @@ export interface WorkerContext {
 /** A queued row older than this with no BullMQ job behind it is re-enqueued by the sweep. */
 const RECONCILE_AFTER_MS = 60_000
 const RECONCILE_EVERY_MS = 60_000
+const CLEANUP_EVERY_MS = 15 * 60_000
 
 async function markJob(ctx: WorkerContext, id: string, patch: Partial<typeof jobs.$inferInsert>) {
   await ctx.deps.database.db.update(jobs).set(patch).where(eq(jobs.id, id))
@@ -58,7 +60,14 @@ export async function reconcileQueuedJobs(ctx: WorkerContext): Promise<number> {
       and(
         eq(jobs.status, 'queued'),
         lt(jobs.createdAt, new Date(Date.now() - RECONCILE_AFTER_MS)),
-        inArray(jobs.type, ['delete_project', 'delete_account', 'cleanup_uploads']),
+        inArray(jobs.type, [
+          'delete_project',
+          'delete_account',
+          'cleanup_uploads',
+          'processing',
+          'export',
+          'otio',
+        ]),
       ),
     )
   for (const row of stale) await enqueueJob(ctx.deps.queues, row)
@@ -75,6 +84,7 @@ export async function purgeExpiredSessions(ctx: WorkerContext): Promise<number> 
 }
 
 export async function processMaintenanceJob(ctx: WorkerContext, bull: BullJob<JobData>) {
+  if (bull.name === 'cleanup-uploads') return { ...(await sweepUploads(ctx.deps, ctx.log)) }
   if (bull.name === 'reconcile') {
     return {
       requeued: await reconcileQueuedJobs(ctx),
@@ -127,7 +137,7 @@ export function createMaintenanceWorker(ctx: WorkerContext): Worker<JobData> {
       'job failed',
     )
     // Out of retries: record it. BullMQ keeps the failed job (the dead-letter path).
-    if (exhausted && bull.name !== 'reconcile') {
+    if (exhausted && bull.name !== 'reconcile' && bull.name !== 'cleanup-uploads') {
       void markJob(ctx, bull.data.jobId, {
         status: 'failed',
         error: e.message,
@@ -140,9 +150,15 @@ export function createMaintenanceWorker(ctx: WorkerContext): Worker<JobData> {
 
 /** The recurring safety-net job. Safe to call on every worker start: the scheduler id makes it idempotent. */
 export async function scheduleMaintenance(ctx: WorkerContext): Promise<void> {
-  await ctx.deps.queues.maintenance.upsertJobScheduler(
+  const { maintenance } = ctx.deps.queues
+  await maintenance.upsertJobScheduler(
     'reconcile',
     { every: RECONCILE_EVERY_MS },
     { name: 'reconcile', data: { jobId: 'reconcile' } },
+  )
+  await maintenance.upsertJobScheduler(
+    'cleanup-uploads',
+    { every: CLEANUP_EVERY_MS },
+    { name: 'cleanup-uploads', data: { jobId: 'cleanup-uploads' } },
   )
 }

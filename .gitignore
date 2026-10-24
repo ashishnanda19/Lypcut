@@ -7,3 +7,4 @@ coverage
 test/fixtures/*.mp4
 test/fixtures/*.wav
 .DS_Store
+test/fixtures/.cache

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { FastifyBaseLogger } from 'fastify'
+import type { Log } from '../../lib/log.js'
 import type { AppDeps } from '../../app/types.js'
 import { jobs, userPreferences, users } from '../../db/schema/index.js'
 import { err } from '../../lib/errors.js'
@@ -43,7 +43,7 @@ export async function loadUserDto(db: Db, userId: string): Promise<UserDto | nul
 export class AccountService {
   constructor(
     private readonly deps: AppDeps,
-    private readonly log: FastifyBaseLogger,
+    private readonly log: Log,
   ) {}
 
   private get db() {
