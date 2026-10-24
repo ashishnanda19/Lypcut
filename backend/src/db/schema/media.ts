@@ -49,9 +49,9 @@ export const assets = pgTable(
   'assets',
   {
     id: pk(),
-    projectId: uuid()
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Null only for a style Reel, which belongs to a person (`userId`) and never to a project. */
+    projectId: uuid().references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid().references(() => users.id, { onDelete: 'cascade' }),
     kind: assetKindEnum().notNull(),
     status: assetStatusEnum().notNull().default('pending'),
     /** Where the bytes live. Keys are prefixed users/<user>/projects/<project>/ so deletes are by prefix. */
@@ -75,7 +75,9 @@ export const assets = pgTable(
     uniqueIndex('assets_storage_key_uq').on(t.storageKey),
     index('assets_project_kind_idx').on(t.projectId, t.kind),
     index('assets_scene_idx').on(t.sceneId),
+    index('assets_user_kind_idx').on(t.userId, t.kind),
     check('assets_size_nonneg', sql`${t.sizeBytes} is null or ${t.sizeBytes} >= 0`),
+    check('assets_has_owner', sql`${t.projectId} is not null or ${t.userId} is not null`),
   ],
 )
 
@@ -87,9 +89,8 @@ export const uploads = pgTable(
     userId: uuid()
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    projectId: uuid()
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Null for a style Reel upload. */
+    projectId: uuid().references(() => projects.id, { onDelete: 'cascade' }),
     assetId: uuid()
       .notNull()
       .references(() => assets.id, { onDelete: 'cascade' }),

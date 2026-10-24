@@ -52,14 +52,20 @@ describe('migrations', () => {
         'chapters',
         'edit_plans',
         'highlights',
+        'instagram_accounts',
         'job_stages',
         'jobs',
         'llm_usage',
+        'oauth_states',
         'projects',
+        'reel_analysis',
+        'reel_metrics',
+        'reels',
         'scenes',
         'sentence_embeddings',
         'sessions',
         'silences',
+        'style_profiles',
         'timeline_ops',
         'timeline_versions',
         'timelines',
@@ -84,7 +90,7 @@ describe('migrations', () => {
       join information_schema.columns c
         on c.table_name = kcu.table_name and c.column_name = kcu.column_name and c.table_schema = 'public'
       where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = 'public'`)
-    expect(r.rows.length).toBe(22)
+    expect(r.rows.length).toBe(28)
     expect(r.rows.every((x) => x.data_type === 'uuid')).toBe(true)
   })
 

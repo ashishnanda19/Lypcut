@@ -3,6 +3,7 @@ import { ConfigError, loadConfig } from '../../src/lib/config.js'
 import { TEST_ENV } from '../helpers/env.js'
 
 const base = { ...TEST_ENV }
+const REAL_TOKEN_KEY = 'k1:' + Buffer.alloc(32, 7).toString('base64')
 
 describe('loadConfig', () => {
   it('parses a valid environment and applies defaults', () => {
@@ -58,7 +59,11 @@ describe('loadConfig', () => {
     const example = { ...base, AUTH_ACCESS_SECRET: 'local-development-secret-change-me-0123456789' }
     expect(() => loadConfig({ ...example, NODE_ENV: 'production' })).toThrow(/development example/)
     expect(() => loadConfig({ ...example, NODE_ENV: 'development' })).not.toThrow()
-    const real = { ...base, AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc' }
+    const real = {
+      ...base,
+      AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc',
+      TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+    }
     expect(() => loadConfig({ ...real, NODE_ENV: 'production' })).not.toThrow()
   })
 
@@ -67,5 +72,52 @@ describe('loadConfig', () => {
       /wildcard/,
     )
     expect(() => loadConfig({ ...base, NODE_ENV: 'development', CORS_ORIGINS: '*' })).not.toThrow()
+  })
+
+  describe('the Instagram token key', () => {
+    const prod = {
+      ...base,
+      NODE_ENV: 'production',
+      AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc',
+    }
+
+    it('is optional outside production, where a public development key is used', () => {
+      expect(loadConfig(base).TOKEN_ENCRYPTION_KEY).toBeUndefined()
+      expect(loadConfig(base).TOKEN_ENCRYPTION_OLD_KEYS).toEqual([])
+    })
+
+    it('is required in production', () => {
+      expect(() => loadConfig(prod)).toThrow(/TOKEN_ENCRYPTION_KEY/)
+      expect(() => loadConfig({ ...prod, TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY })).not.toThrow()
+    })
+
+    it('must be an id and 32 bytes, in the current key and the old ones, and ids must differ', () => {
+      expect(() => loadConfig({ ...base, TOKEN_ENCRYPTION_KEY: 'not-a-key' })).toThrow(
+        /TOKEN_ENCRYPTION_KEY/,
+      )
+      expect(() => loadConfig({ ...base, TOKEN_ENCRYPTION_KEY: 'k1:c2hvcnQ=' })).toThrow(/32 bytes/)
+      expect(() =>
+        loadConfig({
+          ...base,
+          TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+          TOKEN_ENCRYPTION_OLD_KEYS: 'junk',
+        }),
+      ).toThrow(/TOKEN_ENCRYPTION_OLD_KEYS/)
+      expect(() =>
+        loadConfig({
+          ...base,
+          TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+          TOKEN_ENCRYPTION_OLD_KEYS: REAL_TOKEN_KEY,
+        }),
+      ).toThrow(/different/)
+      const old = 'k0:' + Buffer.alloc(32, 9).toString('base64')
+      expect(
+        loadConfig({
+          ...base,
+          TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+          TOKEN_ENCRYPTION_OLD_KEYS: old,
+        }).TOKEN_ENCRYPTION_OLD_KEYS,
+      ).toEqual([old])
+    })
   })
 })

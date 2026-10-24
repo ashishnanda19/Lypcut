@@ -54,6 +54,15 @@ export function planParts(sizeBytes: number, configuredMb: number) {
 const expired = () =>
   new AppError(410, 'UPLOAD_EXPIRED', 'This upload expired. Start it again to continue.')
 
+/**
+ * The project an upload belongs to. Only a style Reel's upload has none, and it is completed by the style module, never
+ * here, so a missing project is a bug, not a user error.
+ */
+function projectOf(row: UploadRow): string {
+  if (!row.projectId) throw new Error(`upload ${row.id} has no project`)
+  return row.projectId
+}
+
 export class UploadService {
   private readonly projects: ProjectService
 
@@ -396,7 +405,7 @@ export class UploadService {
       await tx
         .update(projects)
         .set({ status: 'processing', durationSec: media.durationSec, error: null })
-        .where(eq(projects.id, row.projectId))
+        .where(eq(projects.id, projectOf(row)))
       const [done] = await tx
         .update(uploads)
         .set({
@@ -408,19 +417,19 @@ export class UploadService {
         .where(eq(uploads.id, row.id))
         .returning()
       await tx.insert(usageEvents).values([
-        { userId: user.id, kind: 'upload', amount: 1, projectId: row.projectId },
+        { userId: user.id, kind: 'upload', amount: 1, projectId: projectOf(row) },
         {
           userId: user.id,
           kind: 'video_seconds',
           amount: media.durationSec,
-          projectId: row.projectId,
+          projectId: projectOf(row),
         },
       ])
       const [job] = await tx
         .insert(jobs)
         .values({
           userId: user.id,
-          projectId: row.projectId,
+          projectId: projectOf(row),
           type: 'processing',
           step: 0,
           detail: 'Uploaded',
@@ -436,16 +445,16 @@ export class UploadService {
         'could not enqueue processing; the sweep will retry',
       ),
     )
-    const project = await this.projects.get(user.id, row.projectId)
+    const project = await this.projects.get(user.id, projectOf(row))
     return { upload: this.toDto(result.upload), project, job: toJobDto(result.job) }
   }
 
   private async completedResult(row: UploadRow) {
-    const project = await this.projects.get(row.userId, row.projectId)
+    const project = await this.projects.get(row.userId, projectOf(row))
     const [job] = await this.db
       .select()
       .from(jobs)
-      .where(and(eq(jobs.projectId, row.projectId), eq(jobs.type, 'processing')))
+      .where(and(eq(jobs.projectId, projectOf(row)), eq(jobs.type, 'processing')))
       .orderBy(sql`${jobs.createdAt} desc`)
       .limit(1)
     return { upload: this.toDto(row), project, job: toJobDto(job!) }
@@ -498,7 +507,7 @@ export class UploadService {
   toDto(row: UploadRow): UploadDto {
     return {
       id: row.id,
-      projectId: row.projectId,
+      projectId: projectOf(row),
       status: row.status,
       fileName: row.fileName,
       sizeBytes: row.sizeBytes,

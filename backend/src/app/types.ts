@@ -4,6 +4,7 @@ import type { Storage } from '../lib/storage.js'
 import type { Redis } from 'ioredis'
 import type { Queues } from '../queue/queues.js'
 import type { EmbeddingProvider, Llm } from '../llm/index.js'
+import type { TokenVault } from '../style/instagram/vault.js'
 
 /** Everything the API needs from the outside world. Tests build the app from the same shape. */
 export interface AppDeps {
@@ -16,6 +17,8 @@ export interface AppDeps {
   llm: Llm
   /** Turns text into vectors for search. */
   embeddings: EmbeddingProvider
+  /** Seals and opens Instagram tokens. Only the style module's workers and the connect callback use it. */
+  vault: TokenVault
 }
 
 declare module 'fastify' {

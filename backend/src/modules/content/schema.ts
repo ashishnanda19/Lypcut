@@ -102,7 +102,7 @@ export const summarySchema = z.object({
 
 export const assetSchema = z.object({
   id: z.string(),
-  kind: z.enum(['raw', 'scene_clip', 'proxy', 'export', 'thumbnail', 'audio']),
+  kind: z.enum(['raw', 'scene_clip', 'proxy', 'export', 'thumbnail', 'audio', 'style_reel']),
   label: z.string(),
   status: z.enum(['pending', 'ready', 'failed']),
   mimeType: z.string().nullable(),

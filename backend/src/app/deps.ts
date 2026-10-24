@@ -5,6 +5,7 @@ import { createQueues } from '../queue/queues.js'
 import { Storage } from '../lib/storage.js'
 import pino from 'pino'
 import { createEmbeddings, createLlm } from '../llm/index.js'
+import { createVault } from '../style/instagram/vault.js'
 import { loggerOptions } from '../lib/logger.js'
 import { fakeChapters, fakeHighlights } from '../highlights/fake.js'
 import { fakePlanner } from '../planner/fake.js'
@@ -24,6 +25,7 @@ export function createDeps(config: Config): AppDeps {
       handlers: { highlights: fakeHighlights, chapters: fakeChapters, planner: fakePlanner },
     }),
     embeddings: createEmbeddings(config, pino(loggerOptions(config, 'llm'))),
+    vault: createVault(config),
   }
 }
 

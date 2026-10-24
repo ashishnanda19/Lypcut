@@ -1,5 +1,6 @@
 import os from 'node:os'
 import { z } from 'zod'
+import { parseVaultKey, VaultError } from '../style/instagram/vault.js'
 
 /**
  * Twelve-factor config: everything comes from environment variables, validated once at startup.
@@ -176,6 +177,14 @@ export const envSchema = z
     /** How long a query's vector is remembered, so typing and retyping does not embed it again. */
     EMBEDDING_QUERY_CACHE_SEC: z.coerce.number().int().min(0).default(300),
 
+    /**
+     * Seals Instagram access tokens at rest (AES-256-GCM): `<id>:<32 random bytes, base64>`, from `openssl rand -base64 32`.
+     * Unset in development and tests, which use a public key; production refuses to start without one.
+     */
+    TOKEN_ENCRYPTION_KEY: optionalString,
+    /** Earlier keys, same form, comma separated. They only open what they sealed; the current key seals everything new. */
+    TOKEN_ENCRYPTION_OLD_KEYS: csv.default([]),
+
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
   })
@@ -210,6 +219,32 @@ export const envSchema = z
         path: ['AUTH_ACCESS_SECRET'],
         message:
           'this is the development example; generate a real one with: openssl rand -base64 48',
+      })
+    }
+    for (const [path, specs] of [
+      ['TOKEN_ENCRYPTION_KEY', env.TOKEN_ENCRYPTION_KEY ? [env.TOKEN_ENCRYPTION_KEY] : []],
+      ['TOKEN_ENCRYPTION_OLD_KEYS', env.TOKEN_ENCRYPTION_OLD_KEYS],
+    ] as const) {
+      try {
+        const ids = specs.map((s) => parseVaultKey(s).id)
+        if (path === 'TOKEN_ENCRYPTION_OLD_KEYS') {
+          const current = env.TOKEN_ENCRYPTION_KEY?.split(':')[0] ?? 'dev'
+          if (new Set([current, ...ids]).size !== ids.length + 1)
+            throw new VaultError('bad_key', 'Token key ids must all be different.')
+        }
+      } catch (e) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [path],
+          message: e instanceof Error ? e.message : String(e),
+        })
+      }
+    }
+    if (env.NODE_ENV === 'production' && !env.TOKEN_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TOKEN_ENCRYPTION_KEY'],
+        message: 'required in production; generate one with: echo "k1:$(openssl rand -base64 32)"',
       })
     }
     if (env.EMBEDDING_PROVIDER === 'hosted' && !(env.EMBEDDING_API_URL && env.EMBEDDING_API_KEY)) {

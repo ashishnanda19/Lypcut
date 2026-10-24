@@ -52,6 +52,9 @@ describe('migrations go up and down cleanly', () => {
         'transcripts',
         'llm_usage',
         'sentence_embeddings',
+        'reels',
+        'reel_analysis',
+        'style_profiles',
       ]),
     )
     expect(await applied()).toBeGreaterThanOrEqual(2)
@@ -65,21 +68,93 @@ describe('migrations go up and down cleanly', () => {
       )
     ).rowCount === 1
 
-  it('undoes the newest migration and only that one', async () => {
+  it('undoes the newest migration and only that one, keeping the data that is not style data', async () => {
+    // One person with a project and its video, plus style rows of every kind that the migration touched.
+    const user = (
+      await pool.query(
+        "insert into users (id, email, name, password_hash) values (gen_random_uuid(), 'm@example.com', 'M', 'x') returning id",
+      )
+    ).rows[0]!.id as string
+    const project = (
+      await pool.query(
+        "insert into projects (id, owner_id, title, status, thumb_seed) values (gen_random_uuid(), $1, 'P', 'ready', 's') returning id",
+        [user],
+      )
+    ).rows[0]!.id as string
+    await pool.query(
+      "insert into assets (id, project_id, kind, storage_key, label) values (gen_random_uuid(), $1, 'raw', 'k-raw', 'raw')",
+      [project],
+    )
+    await pool.query(
+      "insert into assets (id, user_id, kind, storage_key, label) values (gen_random_uuid(), $1, 'style_reel', 'k-style', 'reel')",
+      [user],
+    )
+    await pool.query(
+      "insert into llm_usage (id, user_id, kind, provider, model, outcome) values (gen_random_uuid(), $1, 'style', 'fake', 'fake', 'ok')",
+      [user],
+    )
+    await pool.query(
+      "insert into llm_usage (id, user_id, kind, provider, model, outcome) values (gen_random_uuid(), $1, 'planner', 'fake', 'fake', 'ok')",
+      [user],
+    )
+    await pool.query(
+      "insert into jobs (id, user_id, type, step, detail) values (gen_random_uuid(), $1, 'style_sync', 0, 'x')",
+      [user],
+    )
+    await pool.query(
+      "insert into jobs (id, user_id, project_id, type, step, detail) values (gen_random_uuid(), $1, $2, 'processing', 0, 'x')",
+      [user, project],
+    )
+
     const before = await applied()
-    expect(await hasColumn('llm_usage', 'request_id')).toBe(true)
+    expect(await tables()).toContain('reels')
+    expect(await hasColumn('assets', 'user_id')).toBe(true)
     const undone = await migrateDown(pool, folder, 1)
     expect(undone).toHaveLength(1)
     expect(await applied()).toBe(before - 1)
-    expect(await hasColumn('llm_usage', 'request_id')).toBe(false)
-    // The ones before it are still there.
+    const t = await tables()
+    for (const gone of [
+      'instagram_accounts',
+      'reels',
+      'reel_metrics',
+      'reel_analysis',
+      'style_profiles',
+      'oauth_states',
+    ])
+      expect(t).not.toContain(gone)
+    expect(await hasColumn('assets', 'user_id')).toBe(false)
+    // Style data is gone; everything else is still there.
+    const count = async (sql: string) => Number((await pool.query(sql)).rows[0]!.n)
+    expect(await count("select count(*) as n from assets where kind = 'raw'")).toBe(1)
+    expect(await count('select count(*) as n from assets')).toBe(1)
+    expect(await count("select count(*) as n from llm_usage where kind = 'planner'")).toBe(1)
+    expect(await count('select count(*) as n from llm_usage')).toBe(1)
+    expect(await count("select count(*) as n from jobs where type = 'processing'")).toBe(1)
+    expect(await count('select count(*) as n from jobs')).toBe(1)
+    // The enums are back to what they were.
+    const labels = async (type: string) =>
+      (
+        await pool.query<{ l: string }>(
+          'select e.enumlabel as l from pg_enum e join pg_type t on t.oid = e.enumtypid where t.typname = $1',
+          [type],
+        )
+      ).rows.map((r) => r.l)
+    expect(await labels('asset_kind')).not.toContain('style_reel')
+    expect(await labels('job_type')).not.toContain('style_sync')
+    expect(await labels('llm_kind')).not.toContain('style')
     expect(await tables()).toContain('edit_plans')
-    expect(await tables()).toContain('sentence_embeddings')
-    expect(await hasColumn('transcripts', 'content_hash')).toBe(true)
-    expect(await tables()).toContain('llm_usage')
+    expect(await hasColumn('llm_usage', 'request_id')).toBe(true)
+    await pool.query('delete from users')
+    // Put the schema back for the next test.
+    await migrate(drizzle(pool), { migrationsFolder: folder })
+    expect(await tables()).toContain('reels')
+    await migrateDown(pool, folder, 1)
   })
 
   it('can undo the ones before that too', async () => {
+    await migrateDown(pool, folder, 1)
+    expect(await hasColumn('llm_usage', 'request_id')).toBe(false)
+    expect(await tables()).toContain('edit_plans')
     await migrateDown(pool, folder, 1)
     expect(await tables()).not.toContain('edit_plans')
     await migrateDown(pool, folder, 1)
