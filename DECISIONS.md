@@ -203,6 +203,60 @@ job'}` for anything it will not show). `GET /api/jobs/:id` is the polling fallba
 - **The mock-only `fail` in a job id** is not a backend feature and is ignored. Real failures arrive through the same event shape
   as the mock failure: `status: 'failed'`, `step`, `found`, a readable `error`, and "<step> stopped" as `detail`.
 
+## Step 7: the timeline API and reversible operations
+
+- **The server is the source of truth for edits.** Every change, the user's now and the assistant's in Phase 2, is a list of
+  `TimelineOp`s that goes through one engine (`src/timeline-core/ops.ts`), inside one database transaction that also checks the
+  client was looking at the latest version. The engine has no HTTP, database or storage code and does not know who is asking, so
+  the assistant can later call `TimelineService.applyOps` directly and its ops pass the same gate. HTTP lets a client label an
+  edit `ai` (the front end's planner runs in the browser in Phase 1); that is a label, not a privilege.
+- **A faithful port, proven by a differential test.** `ops.ts` and `queries.ts` are the front end's engine. `npm run parity` runs
+  both on identical random edits (1,304 of them): 1,128 give identical results, 173 are refused by both with the same message.
+  Three differences are deliberate and listed below.
+- **Deliberate differences from the front end's engine.**
+  1. _Deterministic ids._ New clips (a split's second half, a ripple's remainder) get ids from `i_v<version>_<n>`, not random
+     ones, so an edit has one result. The client adopts the server's timeline rather than computing its own.
+  2. _Canonical order._ The engine walks clips sorted by id. The first version walked them in key order, which Postgres `jsonb`
+     does not preserve, so the "deterministic" ids changed with how a timeline had been stored. A model-based test caught it
+     (the server and a mirror model disagreed at step 40 of a random run); a test now shuffles key order and requires identical results.
+  3. _Value comparison._ "Did this clip change" and `inverseConflicts` compare by value, not object identity (a timeline from the
+     database shares no objects with another).
+- **A bug in the front end, found by the server's own checks.** Trimming the start of a clip _shorter than 0.1 s_ makes the front
+  end's `clamp(to, lo, itemEnd - 0.1)` bounds cross, which moves the clip to a negative time and negative source time. The server's
+  invariants refuse to store that, and the backend's `doTrim` treats such a clip as unable to shrink. **The front end needs the same
+  one-line fix (done in Step 9);** `npm run parity` reports these cases as "known" until then and fails on them with `STRICT=1`.
+- **Invariants after every op.** A leaf op enforces its own rules (overlap, locked tracks, ranges). On top of that every result must
+  have: clips on existing, compatible tracks; finite times; no negative start or source time (beyond 1 ms of engine rounding dust);
+  positive length; keys equal to ids; at most 20,000 clips. This is the backstop for the low-level `patch` op, which can say anything.
+  It checks structure, never taste.
+- **Strict input.** Ops are validated by a Zod schema before the engine sees them: every field typed and bounded, **unknown keys
+  refused** (nothing can be smuggled into a stored timeline), at most 200 ops per request, batches nested at most 4 deep, 2,000 ops in
+  all. Nesting depth is measured with an explicit stack _first_, because validating a payload nested thousands of levels deep would
+  overflow the validator's own stack (found by a test): that is now a 422, not a 500. Structural problems are `VALIDATION_ERROR`; an
+  op the engine refuses is `INVALID_OP` with its message and `{ opIndex, opType }`.
+- **Versions, a cursor and a redo stack.** Each edit writes a full snapshot plus the op and its inverse as version `n` with a parent.
+  `currentVersion` is the cursor: undo moves it to the parent, redo to the version it came from, and neither deletes anything. A
+  new edit after an undo starts a branch (the abandoned versions stay, visible in History and restorable) and clears the redo stack.
+  This is exactly the front end's model (`versions[cursor]`, forward versions archived).
+- **Optimistic concurrency.** Every write sends the `baseVersion` it was looking at; the timeline row is locked `FOR UPDATE`, and a
+  mismatch is a 409 `VERSION_CONFLICT` with `{ currentVersion, lastVersion }`. Two requests on one version: exactly one wins.
+  Edits to different projects never wait on each other. A refused op leaves nothing behind (version, op log, snapshot) even if
+  earlier ops in the request were fine.
+- **One version per request.** A request is a batch and makes one version, so undo undoes the request. Its stored `inverse` is the
+  single patch `patchBetween(after, before)`; `timeline_ops` also logs each op with its own inverse for audit.
+- **Restore is non-destructive**: it adds a new version whose change is "become that one", so nothing in the history is lost and the
+  restore itself can be undone. Restoring what already is the current state is a 409, as in the front end.
+- **History without weight.** `GET .../history` lists versions (newest first, paged by `before`) with `current`, `onBranch` and
+  `redoable` flags and no snapshots; `GET .../versions/:n` returns one in full. Snapshots are stored whole (simple, and a restore needs
+  them); at roughly 100 KB for a 300-clip timeline a retention policy (keep every Nth, prune old branches) will be wanted before very long
+  editing sessions are common. A single snapshot is capped at 8 MB.
+- **OTIO export** (`GET /projects/:id/export/otio`) writes what the front end writes, and also keeps everything Lypcut needs to
+  read its own file back exactly (exact times, ids, empty tracks, full settings) under `metadata.lypcut`, which other tools ignore.
+  `fromOtio` reads it back: the round-trip tests compare the rebuilt timeline to the original across hand-built and random edit
+  histories. A plain OTIO file from another tool is refused with a clear message rather than guessed at. Clips point at the original
+  upload's file name (`media/<name>`) so an editor relinks the obvious file. The download name is safe for Hindi titles
+  (ASCII fallback plus RFC 5987 `filename*`).
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for

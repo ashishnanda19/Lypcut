@@ -6,6 +6,7 @@ import { createTestApp, type TestApp } from '../helpers/app.js'
 import { TestClient } from '../helpers/client.js'
 import { resetDatabase } from '../helpers/db.js'
 import { makeVideo } from '../helpers/media.js'
+import { readyProject } from '../helpers/ready.js'
 import { fullUpload, startUpload } from '../helpers/upload.js'
 import { ORIGIN, signup, type Person } from '../helpers/world.js'
 
@@ -18,7 +19,7 @@ import { ORIGIN, signup, type Person } from '../helpers/world.js'
 let t: TestApp
 let a: Person
 let b: Person
-let theirs: { projectId: string; uploadId: string; jobId: string }
+let theirs: { projectId: string; uploadId: string; jobId: string; readyId: string }
 let video: string
 
 beforeAll(async () => {
@@ -35,7 +36,9 @@ beforeEach(async () => {
   const started = await startUpload(b.c, video)
   // B also has a finished upload, so they have a processing job.
   const finished = await fullUpload(b.c, video)
+  const ready = await readyProject(t, b)
   theirs = {
+    readyId: ready.projectId,
     projectId: started.projectId,
     uploadId: started.upload.id,
     jobId: finished.done.body.job.id,
@@ -58,6 +61,50 @@ const ROUTES: Route[] = [
     body: { title: 'Hijacked' },
   },
   { name: 'delete a project', method: 'DELETE', url: (i) => `/api/projects/${i.projectId}` },
+  { name: 'read the timeline', method: 'GET', url: (i) => `/api/projects/${i.readyId}/timeline` },
+  {
+    name: 'edit the timeline',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/timeline/ops`,
+    body: {
+      baseVersion: 0,
+      label: 'x',
+      ops: [{ type: 'addMarker', marker: { id: 'm', time: 1, label: 'x' } }],
+    },
+  },
+  {
+    name: 'undo on the timeline',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/timeline/undo`,
+    body: { baseVersion: 0 },
+  },
+  {
+    name: 'redo on the timeline',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/timeline/redo`,
+    body: { baseVersion: 0 },
+  },
+  {
+    name: 'read the history',
+    method: 'GET',
+    url: (i) => `/api/projects/${i.readyId}/timeline/history`,
+  },
+  {
+    name: 'read a version',
+    method: 'GET',
+    url: (i) => `/api/projects/${i.readyId}/timeline/versions/0`,
+  },
+  {
+    name: 'restore a version',
+    method: 'POST',
+    url: (i) => `/api/projects/${i.readyId}/timeline/restore`,
+    body: { baseVersion: 0, versionN: 0 },
+  },
+  {
+    name: 'export the timeline',
+    method: 'GET',
+    url: (i) => `/api/projects/${i.readyId}/export/otio`,
+  },
   { name: 'read a job', method: 'GET', url: (i) => `/api/jobs/${i.jobId}` },
   { name: 'retry a job', method: 'POST', url: (i) => `/api/jobs/${i.jobId}/retry` },
   { name: 'read an upload', method: 'GET', url: (i) => `/api/uploads/${i.uploadId}` },
@@ -91,6 +138,7 @@ describe('another user’s things', () => {
         projectId: uuidv7(),
         uploadId: uuidv7(),
         jobId: uuidv7(),
+        readyId: uuidv7(),
       })
       expect(real.status).toBe(404)
       // The answer is the same as for something that does not exist, so ids cannot be probed.
@@ -118,8 +166,8 @@ describe('another user’s things', () => {
 
   it('never appear in A’s project list', async () => {
     expect((await a.c.get('/api/projects')).body).toEqual([])
-    // B has two: one with an upload started, one finished.
-    expect((await b.c.get('/api/projects')).body).toHaveLength(2)
+    // B has three: one with an upload started, one finished, one ready.
+    expect((await b.c.get('/api/projects')).body).toHaveLength(3)
   })
 
   it('cannot be reached with a presigned URL meant for B', async () => {

@@ -99,6 +99,22 @@ The worker runs eight stages per project and reports each on the job (`step`, `d
 
 Each stage is checkpointed and idempotent, so a failed job resumes at the stage that failed.
 
+### Editing the timeline
+
+```
+GET  /api/projects/:id/timeline              { version, lastVersion, canUndo, canRedo, timeline }
+POST /api/projects/:id/timeline/ops          { baseVersion, ops: [...], label, author?, editId? }  -> one new version
+POST /api/projects/:id/timeline/undo|redo    { baseVersion }
+GET  /api/projects/:id/timeline/history      versions without snapshots (?limit=&before=)
+GET  /api/projects/:id/timeline/versions/:n  one version in full
+POST /api/projects/:id/timeline/restore      { baseVersion, versionN }  -> a new version equal to that one
+GET  /api/projects/:id/export/otio           the current timeline as an OpenTimelineIO file
+```
+
+Always send back the `version` you last saw as `baseVersion`; a stale one is a `409 VERSION_CONFLICT`. An invalid op is a
+`422 INVALID_OP` that names the op. The engine lives in `src/timeline-core` and has no I/O. `npm run parity` compares it with the
+front end's copy on random edits (the front end must be at `../lypcut`).
+
 ### Following a job
 
 ```
