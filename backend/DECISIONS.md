@@ -347,3 +347,19 @@ unless it says otherwise; the backend changed in two small ways, noted at the en
 - In real mode the front end keeps using MSW for `/style/*` only (Phase 3).
 - The MP4 render stays a stand-in in Phase 1. OTIO export is real.
 - One repository with two folders: `frontend/` and `backend/`.
+
+## Phase 2, step 2a: one shared timeline engine
+
+- **The two copies became one.** The front end's engine and the server's had converged to the same code (the server's version
+  was the front end's plus three deliberate differences, listed in Step 7, and the front end adopted two of them in Step 9).
+  Phase 2 needs the transcript-to-ops builders on the server as well, which would have been a third copy, so the engine
+  now lives in `packages/timeline-core`: types, ops, validation, inverses, queries, `buildInitialTimeline`, and the
+  builders (`removeFillersOp`, `trimPausesOp`, `keepRangeOp`, `captionsForTimeline`). The package is the server's version (it
+  has the invariants and value comparison) plus the front end's extra queries and builders.
+- **What stayed apart:** the strict op schema and OTIO export (server only), and the demo builder that invents B-roll for the
+  mock mode (front end only). The server's first timeline has no B-roll.
+- **The parity script is gone.** It compared two copies; there is one now, and the existing front-end and backend suites
+  exercise it from both sides.
+- **Build and Docker.** Development and tests use the package from source (Vite alias, tsconfig `paths`, a Vitest alias). The
+  production build compiles it first and the image installs it as `node_modules/@lypcut/timeline-core`, so the Docker build context
+  is the repository root (`backend/docker-compose.yml` and `backend/Dockerfile` changed accordingly).

@@ -1,9 +1,17 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
+// The shared engine is used from its source in tests, so a change to it needs no rebuild.
+const timelineCore = fileURLToPath(
+  new URL('../packages/timeline-core/src/index.ts', import.meta.url),
+)
+
 export default defineConfig({
+  resolve: { alias: { '@lypcut/timeline-core': timelineCore } },
   test: {
     projects: [
       {
+        extends: true,
         test: {
           name: 'unit',
           include: ['test/unit/**/*.test.ts'],
@@ -11,6 +19,7 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'integration',
           include: ['test/integration/**/*.test.ts'],

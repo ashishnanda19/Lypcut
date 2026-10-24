@@ -2,17 +2,20 @@
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 
+# The build context is the repository root: the backend uses the shared packages/timeline-core, which the
+# backend's tsconfig reaches at ../packages (that is /packages here, since the app lives in /app).
 FROM base AS deps
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci
 
 FROM deps AS build
-COPY tsconfig.json tsconfig.build.json ./
-COPY src ./src
+COPY packages/timeline-core /packages/timeline-core
+COPY backend/tsconfig.json backend/tsconfig.build.json ./
+COPY backend/src ./src
 RUN npm run build
 
 FROM base AS prod-deps
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
 
 # whisper.cpp, built from source: local speech recognition that needs no account. GGML_NATIVE=OFF keeps the
@@ -37,9 +40,12 @@ COPY --from=whisper /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 # Speech models live on a volume (so they are downloaded once). The directory must belong to the app user.
 RUN mkdir -p /models && chown node:node /models
 COPY --from=prod-deps /app/node_modules ./node_modules
+# The shared engine, built, where Node looks for @lypcut/timeline-core.
+COPY packages/timeline-core/package.json ./node_modules/@lypcut/timeline-core/package.json
+COPY --from=build /packages/timeline-core/dist ./node_modules/@lypcut/timeline-core/dist
 COPY --from=build /app/dist ./dist
-COPY package.json ./
-COPY drizzle ./drizzle
+COPY backend/package.json ./
+COPY backend/drizzle ./drizzle
 USER node
 EXPOSE 4000 4001
 ENTRYPOINT ["/usr/bin/tini", "--"]

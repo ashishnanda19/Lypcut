@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { timelineOpsInput } from '../../timeline-core/schema.js'
-import type { Timeline, TimelineOp } from '../../timeline-core/types.js'
+import type { Timeline, TimelineOp } from '@lypcut/timeline-core'
 
 /** The front end calls these 'you' and 'ai' (its `Version.author`); the database stores 'user' and 'assistant'. */
 export const authorSchema = z.enum(['you', 'ai'])

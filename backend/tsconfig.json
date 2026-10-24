@@ -16,7 +16,10 @@
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@lypcut/timeline-core": ["../packages/timeline-core/src/index.ts"]
+    }
   },
   "exclude": ["scripts/parity"],
   "include": ["src", "test", "scripts", "drizzle.config.ts", "vitest.config.ts", "eslint.config.js"]

@@ -9,7 +9,14 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
-      alias: { '@': path.resolve(import.meta.dirname, 'src') },
+      alias: {
+        '@': path.resolve(import.meta.dirname, 'src'),
+        // The shared engine, used from its source so a change to it needs no rebuild.
+        '@lypcut/timeline-core': path.resolve(
+          import.meta.dirname,
+          '../packages/timeline-core/src/index.ts',
+        ),
+      },
     },
     build: { target: 'es2022' },
     server: {

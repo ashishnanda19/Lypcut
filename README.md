@@ -2,10 +2,11 @@
 
 AI-native video editing for creators: edit a video by talking to it, in Hindi, Hinglish or English.
 
-| Folder                   | What it is                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------------------------- |
-| [`frontend/`](frontend/) | The web app (React, TypeScript, Vite). Runs on a built-in mock API or on the real backend.   |
-| [`backend/`](backend/)   | The API and workers (Node, Fastify, Postgres, Redis, S3-compatible storage, FFmpeg, Whisper). |
+| Folder                                               | What it is                                                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [`frontend/`](frontend/)                             | The web app (React, TypeScript, Vite). Runs on a built-in mock API or on the real backend.            |
+| [`packages/timeline-core/`](packages/timeline-core/) | The timeline engine shared by both, so an edit means the same thing in the browser and on the server. |
+| [`backend/`](backend/)                               | The API and workers (Node, Fastify, Postgres, Redis, S3-compatible storage, FFmpeg, Whisper).         |
 
 ## Run everything
 

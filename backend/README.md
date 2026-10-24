@@ -30,8 +30,8 @@ search, and OpenTimelineIO export. The front end is the sibling folder `../front
 - **Video bytes never pass through the API.** Uploads and playback use short-lived links signed for one object.
 - **The worker runs the pipeline** as checkpointed, idempotent stages. A crash or a restart resumes at the stage that
   was running; a permanent failure is a clear message on the job, and **Retry** continues from there.
-- **The timeline engine is shared in behaviour with the front end.** `npm run parity` runs both on the same random
-  edits and compares results, ids included.
+- **The timeline engine is one shared package** (`packages/timeline-core`), used by the editor and the server, so an
+  edit gives the same result in both, ids included.
 - **Every query that touches user data is scoped by owner**, in the `WHERE` clause. Another person's project is a `404`,
   never a `403`. A table-driven test lists every route and must grow with each new one.
 
@@ -164,8 +164,7 @@ GET  /api/projects/:id/export/otio           the current timeline as an OpenTime
 ```
 
 Always send back the `version` you last saw as `baseVersion`; a stale one is a `409 VERSION_CONFLICT`. An invalid op is a
-`422 INVALID_OP` that names the op. The engine lives in `src/timeline-core` and has no I/O. `npm run parity` compares it with the
-front end's copy on random edits (the front end is `../frontend`).
+`422 INVALID_OP` that names the op. The engine lives in `packages/timeline-core` (shared with the front end) and has no I/O; the server adds the strict op schema and OTIO export in `src/timeline-core`.
 
 ### Following a job
 

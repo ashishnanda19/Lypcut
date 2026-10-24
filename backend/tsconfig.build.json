@@ -5,7 +5,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "sourceMap": true,
-    "declaration": false
+    "declaration": false,
+    "paths": {
+      "@lypcut/timeline-core": ["../packages/timeline-core/dist/index.d.ts"]
+    }
   },
   "include": ["src"]
 }

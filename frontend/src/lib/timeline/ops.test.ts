@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { Timeline, TimelineOp } from '@/types'
 import { buildStressTimeline } from './build'
 import { fixture } from './fixtures'
-import { applyOp, inverseConflicts, OpError, sequentialIds, validateOp } from './ops'
+import {
+  applyOp,
+  inverseConflicts,
+  OpError,
+  sequentialIds,
+  validateOp,
+} from '@lypcut/timeline-core'
 import {
   coverage,
   cutFlags,
@@ -11,7 +17,7 @@ import {
   timeAtSource,
   timelineDuration,
   trackItems,
-} from './queries'
+} from '@lypcut/timeline-core'
 
 const items = (tl: Timeline) =>
   JSON.stringify(Object.values(tl.items).sort((a, b) => a.id.localeCompare(b.id)))

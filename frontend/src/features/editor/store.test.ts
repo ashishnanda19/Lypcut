@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { EditPlan } from '@/types'
 import { fixture } from '@/lib/timeline/fixtures'
-import { removeFillersOp } from '@/lib/timeline/transcript'
+import { removeFillersOp } from '@lypcut/timeline-core'
 import { buildStressTimeline } from '@/lib/timeline/build'
-import { timelineDuration, trackItems } from '@/lib/timeline/queries'
+import { timelineDuration, trackItems } from '@lypcut/timeline-core'
 import { canRedo, canUndo, editStatus, headTimeline, shownTimeline, useEditor } from './store'
 
 const { words, timeline } = fixture()

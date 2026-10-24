@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { TimelineOp } from './types.js'
+import type { TimelineOp } from '@lypcut/timeline-core'
 
 /**
  * The shape of an op, checked before the engine ever sees it. The engine (ops.ts) decides whether an op makes

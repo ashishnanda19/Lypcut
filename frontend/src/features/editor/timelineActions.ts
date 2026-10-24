@@ -1,6 +1,6 @@
 import { toast } from '@/components/ui/Toast'
 import { uid } from '@/lib/ids'
-import { itemEnd, itemsByTrack, trackByKind } from '@/lib/timeline/queries'
+import { itemEnd, itemsByTrack, trackByKind } from '@lypcut/timeline-core'
 import type { Timeline, TimelineItem, TimelineOp } from '@/types'
 import { clock } from './clock'
 import { headTimeline, useEditor } from './store'

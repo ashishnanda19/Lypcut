@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+.git
+**/.env
+**/.env.local
+**/coverage
+**/test-results
+backend/test/fixtures/*.mp4
+backend/.tools
+backend/models
+frontend

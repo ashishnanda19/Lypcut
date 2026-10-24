@@ -1,5 +1,5 @@
 import type { Timeline, TimelineItem } from '@/types'
-import { trackItems } from './queries'
+import { trackItems } from '@lypcut/timeline-core'
 
 /**
  * Writes the timeline as OpenTimelineIO JSON, the interchange format that DaVinci Resolve,

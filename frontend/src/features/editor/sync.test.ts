@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ClientModule from '@/api/client'
 import type { Timeline, TimelineOp } from '@/types'
 import { fixture } from '@/lib/timeline/fixtures'
-import { applyOp, sequentialIds } from '@/lib/timeline/ops'
-import { trackItems } from '@/lib/timeline/queries'
+import { applyOp, sequentialIds } from '@lypcut/timeline-core'
+import { trackItems } from '@lypcut/timeline-core'
 
 vi.mock('@/components/ui/Toast', () => ({ toast: vi.fn() }))
 vi.mock('@/api/client', async () => {

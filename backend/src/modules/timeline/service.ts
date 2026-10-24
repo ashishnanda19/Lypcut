@@ -9,10 +9,10 @@ import {
 } from '../../db/schema/index.js'
 import { AppError, err } from '../../lib/errors.js'
 import { requireProject } from '../../lib/ownership.js'
-import { isEmptyPatch, patchBetween } from '../../timeline-core/equality.js'
-import { applyOp, OpError, sequentialIds } from '../../timeline-core/ops.js'
+import { isEmptyPatch, patchBetween } from '@lypcut/timeline-core'
+import { applyOp, OpError, sequentialIds } from '@lypcut/timeline-core'
 import { otioString } from '../../timeline-core/otio.js'
-import type { Timeline, TimelineOp } from '../../timeline-core/types.js'
+import type { Timeline, TimelineOp } from '@lypcut/timeline-core'
 import type { TimelineState, VersionDto } from './schema.js'
 
 type Db = AppDeps['database']['db']

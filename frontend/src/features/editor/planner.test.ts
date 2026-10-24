@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fixture } from '@/lib/timeline/fixtures'
-import { applyOp } from '@/lib/timeline/ops'
-import { timelineDuration } from '@/lib/timeline/queries'
+import { applyOp } from '@lypcut/timeline-core'
+import { timelineDuration } from '@lypcut/timeline-core'
 import { answerQuestion, plan, type PlannerContext } from './planner'
 
 const { src, timeline } = fixture()

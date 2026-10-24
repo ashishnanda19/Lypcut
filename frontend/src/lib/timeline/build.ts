@@ -1,26 +1,10 @@
-import type { Scene, Timeline, TimelineItem, TimelineSettings, Track } from '@/types'
-
-export const DEFAULT_SETTINGS: TimelineSettings = {
-  captionStyleId: 'saffron-pop',
-  captionsOn: false,
-  crop: { x: 0.5, y: 0.5, scale: 1 },
-  keyframes: [],
-  markers: [],
-  aspect: '9:16',
-}
-
-export const TRACKS: Track[] = [
-  { id: 'trk_video', kind: 'video', name: 'Video' },
-  { id: 'trk_broll', kind: 'broll', name: 'B-roll' },
-  { id: 'trk_audio', kind: 'audio', name: 'Voice' },
-  { id: 'trk_captions', kind: 'captions', name: 'Captions' },
-  { id: 'trk_overlay', kind: 'broll', name: 'Overlay', advanced: true },
-  { id: 'trk_effects', kind: 'effects', name: 'Effects', advanced: true },
-]
+import type { Scene, Timeline, TimelineItem } from '@/types'
+import { DEFAULT_SETTINGS, TRACKS } from '@lypcut/timeline-core'
 
 /**
- * The timeline the editor opens with: one video clip and one voice clip per scene the AI found,
- * plus a few B-roll suggestions. Captions start empty on purpose: "Add captions" is the first
+ * The timeline the demo (mock) editor opens with: one video clip and one voice clip per scene the AI found,
+ * plus a few B-roll suggestions that only the demo makes up. The real backend builds its own
+ * (without B-roll) when processing finishes, with the same builder the server uses (@lypcut/timeline-core). Captions start empty on purpose: "Add captions" is the first
  * thing the assistant offers, and watching them land is the point.
  */
 export function buildInitialTimeline(scenes: Scene[], sourceDuration: number): Timeline {

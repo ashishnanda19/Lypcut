@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { itemsOfKind } from '@/lib/timeline/queries'
+import { itemsOfKind } from '@lypcut/timeline-core'
 import type { AspectId, Timeline, TimelineItem, Word } from '@/types'
 import { clock, useClock } from './clock'
 import { LiveCaption } from './CaptionView'

@@ -13,7 +13,7 @@ import {
 } from '../../src/db/schema/index.js'
 import { findChapters, findHighlights } from '../../src/transcription/insights.js'
 import { fixtureTranscript, LINES } from './transcript-fixture.js'
-import type { Timeline } from '../../src/timeline-core/types.js'
+import type { Timeline } from '@lypcut/timeline-core'
 import type { TestApp } from './app.js'
 import { sampleTimeline } from './timeline.js'
 import type { Person } from './world.js'

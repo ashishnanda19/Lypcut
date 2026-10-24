@@ -6,7 +6,7 @@ import {
   timelineOpsInput,
   timelineOpsSchema,
 } from '../../src/timeline-core/schema.js'
-import type { TimelineOp } from '../../src/timeline-core/types.js'
+import type { TimelineOp } from '@lypcut/timeline-core'
 
 const item = {
   id: 'c1',

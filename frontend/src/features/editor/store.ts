@@ -13,9 +13,9 @@ import {
   inverseConflicts,
   OpError,
   sequentialIds,
-} from '@/lib/timeline/ops'
+} from '@lypcut/timeline-core'
 import { onSignOut } from '@/lib/session'
-import { timeAtSource } from '@/lib/timeline/queries'
+import { timeAtSource } from '@lypcut/timeline-core'
 
 /**
  * Editor state. Everything about the edit is a list of versions; the timeline you see is

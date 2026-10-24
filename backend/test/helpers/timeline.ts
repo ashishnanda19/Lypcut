@@ -1,6 +1,6 @@
-import { buildInitialTimeline } from '../../src/timeline-core/build.js'
-import { applyOp } from '../../src/timeline-core/ops.js'
-import type { Timeline, TimelineItem, TimelineOp } from '../../src/timeline-core/types.js'
+import { buildInitialTimeline } from '@lypcut/timeline-core'
+import { applyOp } from '@lypcut/timeline-core'
+import type { Timeline, TimelineItem, TimelineOp } from '@lypcut/timeline-core'
 
 /** A small seeded random number generator, so a failing fuzz run can be replayed exactly. */
 export function prng(seed: number) {

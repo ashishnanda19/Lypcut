@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { generateSource } from '@/mocks/data/seed'
-import { applyOp } from './ops'
+import { applyOp } from '@lypcut/timeline-core'
 import { fixture } from './fixtures'
-import { cutFlags, captionItems, timelineDuration, trackItems } from './queries'
+import { cutFlags, captionItems, timelineDuration, trackItems } from '@lypcut/timeline-core'
 import {
   buildCaptionPhrases,
   captionsForTimeline,
@@ -12,7 +12,7 @@ import {
   removeFillersOp,
   restoreWords,
   trimPausesOp,
-} from './transcript'
+} from '@lypcut/timeline-core'
 
 describe('seed transcript', () => {
   it('is deterministic and well formed', () => {

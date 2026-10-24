@@ -13,8 +13,8 @@ import type {
 } from '@/types'
 import { AI } from '@/lib/config'
 import { uid } from '@/lib/ids'
-import { applyOp } from '@/lib/timeline/ops'
-import { coverage, splitByCoverage, timeAtSource, timelineDuration } from '@/lib/timeline/queries'
+import { applyOp } from '@lypcut/timeline-core'
+import { coverage, splitByCoverage, timeAtSource, timelineDuration } from '@lypcut/timeline-core'
 import {
   captionsForTimeline,
   keepRangeOp,
@@ -22,7 +22,7 @@ import {
   removeFillersOp,
   trimPausesOp,
   wordRange,
-} from '@/lib/timeline/transcript'
+} from '@lypcut/timeline-core'
 import { searchTranscript } from '@/lib/search'
 import { formatDuration } from '@/lib/time'
 import { CAPTION_STYLES, captionStyle } from './captionStyles'

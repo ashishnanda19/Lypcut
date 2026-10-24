@@ -1,6 +1,6 @@
 import { memo, type CSSProperties } from 'react'
 import { cn } from '@/lib/cn'
-import { captionAt, srcTimeAt, wordIndexAt } from '@/lib/timeline/queries'
+import { captionAt, srcTimeAt, wordIndexAt } from '@lypcut/timeline-core'
 import { usePrefs } from '@/stores/prefs'
 import type { Timeline, Word } from '@/types'
 import { useClock } from './clock'

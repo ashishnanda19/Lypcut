@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { sameTimeline } from '../../src/timeline-core/equality.js'
-import { applyOp, OpError, sequentialIds } from '../../src/timeline-core/ops.js'
+import { sameTimeline } from '@lypcut/timeline-core'
+import { applyOp, OpError, sequentialIds } from '@lypcut/timeline-core'
 import { fromOtio, otioString, RATE, toOtio } from '../../src/timeline-core/otio.js'
-import { timelineDuration, trackItems } from '../../src/timeline-core/queries.js'
-import type { Timeline, TimelineOp } from '../../src/timeline-core/types.js'
+import { timelineDuration, trackItems } from '@lypcut/timeline-core'
+import type { Timeline, TimelineOp } from '@lypcut/timeline-core'
 import { captionItems, clone, prng, sampleTimeline } from '../helpers/timeline.js'
 
 type Node = {

@@ -1,6 +1,6 @@
 import { asc, eq } from 'drizzle-orm'
 import { scenes, timelines, timelineVersions } from '../../db/schema/index.js'
-import { buildInitialTimeline } from '../../timeline-core/build.js'
+import { buildInitialTimeline } from '@lypcut/timeline-core'
 import type { Stage } from '../context.js'
 
 /**

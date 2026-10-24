@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sameTimeline } from '../../src/timeline-core/equality.js'
+import { sameTimeline } from '@lypcut/timeline-core'
 import {
   applyOp,
   assertInvariants,
@@ -10,7 +10,7 @@ import {
   OpError,
   sequentialIds,
   validateOp,
-} from '../../src/timeline-core/ops.js'
+} from '@lypcut/timeline-core'
 import {
   coverage,
   cutFlags,
@@ -19,9 +19,9 @@ import {
   timeAtSource,
   timelineDuration,
   trackItems,
-} from '../../src/timeline-core/queries.js'
-import type { Timeline, TimelineOp } from '../../src/timeline-core/types.js'
-import { buildInitialTimeline } from '../../src/timeline-core/build.js'
+} from '@lypcut/timeline-core'
+import type { Timeline, TimelineOp } from '@lypcut/timeline-core'
+import { buildInitialTimeline } from '@lypcut/timeline-core'
 import { captionItems, clone, deepFreeze, prng, sampleTimeline } from '../helpers/timeline.js'
 
 const { timeline: tl, words } = sampleTimeline()

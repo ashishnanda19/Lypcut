@@ -6,6 +6,11 @@
 # The credentials below are local-development defaults only.
 name: lypcut
 
+# The image is built from the repository root, because the backend uses the shared packages/timeline-core.
+x-build: &build
+  context: ..
+  dockerfile: backend/Dockerfile
+
 x-app-env: &app-env
   NODE_ENV: development
   HOST: 0.0.0.0
@@ -74,7 +79,7 @@ services:
 
   # Creates the bucket, then exits.
   createbuckets:
-    build: .
+    build: *build
     image: lypcut-tools
     command: ['node', 'dist/tools/ensure-bucket.js']
     environment: *app-env
@@ -85,7 +90,7 @@ services:
   # Downloads the Whisper speech model once into a volume (about 465 MB for `small`), then exits.
   # Choose another with WHISPER_MODEL=tiny|base|small|medium. Bigger hears Hindi better and runs slower.
   whisper-model:
-    build: .
+    build: *build
     image: lypcut-model
     command: ['node', 'dist/tools/download-whisper-model.js']
     environment: *app-env
@@ -94,7 +99,7 @@ services:
 
   # Applies database migrations, then exits. The API and worker wait for it.
   migrate:
-    build: .
+    build: *build
     image: lypcut-migrate
     command: ['node', 'dist/db/migrate.js']
     environment: *app-env
@@ -103,7 +108,7 @@ services:
     restart: 'no'
 
   api:
-    build: .
+    build: *build
     image: lypcut-api
     environment: *app-env
     ports: ['${API_PORT:-4000}:4000']
@@ -128,7 +133,7 @@ services:
     stop_grace_period: 15s
 
   worker:
-    build: .
+    build: *build
     image: lypcut-worker
     command: ['node', 'dist/worker.js']
     environment: *app-env

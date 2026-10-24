@@ -1,6 +1,6 @@
-import { OpError } from './ops.js'
-import { trackItems } from './queries.js'
-import type { Timeline, TimelineItem, TimelineSettings, Track } from './types.js'
+import { OpError } from '@lypcut/timeline-core'
+import { trackItems } from '@lypcut/timeline-core'
+import type { Timeline, TimelineItem, TimelineSettings, Track } from '@lypcut/timeline-core'
 
 /**
  * OpenTimelineIO, the interchange format DaVinci Resolve, Premiere Pro (through adapters) and Final Cut Pro

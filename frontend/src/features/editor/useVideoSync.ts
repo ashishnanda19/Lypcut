@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from 'react'
-import { srcTimeAt } from '@/lib/timeline/queries'
+import { srcTimeAt } from '@lypcut/timeline-core'
 import { clock } from './clock'
 import { shownTimeline, useEditor } from './store'
 

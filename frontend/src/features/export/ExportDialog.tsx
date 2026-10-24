@@ -15,7 +15,7 @@ import { headTimeline, useEditor } from '@/features/editor/store'
 import { flushSaves } from '@/features/editor/sync'
 import { isReal } from '@/lib/runtime'
 import { otioString } from '@/lib/timeline/otio'
-import { timelineDuration } from '@/lib/timeline/queries'
+import { timelineDuration } from '@lypcut/timeline-core'
 import { formatDuration } from '@/lib/time'
 import type { AspectId, Job } from '@/types'
 

@@ -7,6 +7,42 @@
  * A video item maps one to the other: sourceTime = item.srcIn + (timelineTime - item.start).
  */
 
+import type {
+  AspectId,
+  CropState,
+  ItemKind,
+  ItemMeta,
+  Keyframe,
+  Marker,
+  Timeline,
+  TimelineItem,
+  TimelineOp,
+  TimelineSettings,
+  Track,
+  TrackKind,
+  Word,
+} from '@lypcut/timeline-core'
+
+/**
+ * The timeline model and its ops live in @lypcut/timeline-core, shared with the server, so the editor and the
+ * backend can never disagree about what a timeline is. They are re-exported here for the rest of the app.
+ */
+export type {
+  AspectId,
+  CropState,
+  ItemKind,
+  ItemMeta,
+  Keyframe,
+  Marker,
+  Timeline,
+  TimelineItem,
+  TimelineOp,
+  TimelineSettings,
+  Track,
+  TrackKind,
+  Word,
+}
+
 export type Lang = 'hi' | 'hinglish' | 'en'
 export type ContentType = 'youtuber' | 'business' | 'clipper'
 export type ProjectStatus = 'uploading' | 'processing' | 'ready' | 'exported' | 'failed'
@@ -46,19 +82,6 @@ export interface Speaker {
   id: string
   name: string
   color: 'saffron' | 'teal'
-}
-
-export interface Word {
-  /** Roman (Hinglish) spelling. English words keep their English spelling. */
-  text: string
-  /** Devanagari spelling, shown in Devanagari mode. */
-  dev: string
-  start: number
-  end: number
-  speaker: string
-  /** Language of this single word, so mixed sentences render correctly. */
-  language: 'hi' | 'en'
-  filler?: boolean
 }
 
 export interface Sentence {
@@ -121,114 +144,6 @@ export interface SearchResult {
 /* ------------------------------------------------------------------ */
 /* Timeline                                                              */
 /* ------------------------------------------------------------------ */
-
-export type TrackKind = 'video' | 'broll' | 'audio' | 'captions' | 'effects'
-export type ItemKind = 'video' | 'broll' | 'audio' | 'caption' | 'effect'
-
-export interface Track {
-  id: string
-  kind: TrackKind
-  name: string
-  muted?: boolean
-  locked?: boolean
-  /** Only shown in Advanced mode. */
-  advanced?: boolean
-}
-
-export interface ItemMeta {
-  /** Caption text (Roman) and its Devanagari twin. */
-  text?: string
-  dev?: string
-  /** Transcript word range for captions (from inclusive, to exclusive). */
-  wordFrom?: number
-  wordTo?: number
-  effect?: 'blur' | 'zoom' | 'shake'
-  amount?: number
-  /** Created by the assistant. Drives the landing animation. */
-  ai?: boolean
-}
-
-export interface TimelineItem {
-  id: string
-  trackId: string
-  kind: ItemKind
-  label: string
-  /** Position on the timeline, in seconds. */
-  start: number
-  duration: number
-  /** Source time at `start`. Meaningful for video, audio and captions. */
-  srcIn: number
-  meta?: ItemMeta
-}
-
-export interface CropState {
-  /** Centre of the 9:16 window inside the source frame, 0-1 on both axes. */
-  x: number
-  y: number
-  /** 1 = the full-height 9:16 window, larger zooms in. */
-  scale: number
-}
-
-export interface Keyframe extends CropState {
-  /** Timeline time. */
-  t: number
-}
-
-export interface Marker {
-  id: string
-  time: number
-  label: string
-}
-
-export type AspectId = '9:16' | '1:1' | '4:5' | '16:9'
-
-export interface TimelineSettings {
-  captionStyleId: string
-  captionsOn: boolean
-  crop: CropState
-  keyframes: Keyframe[]
-  markers: Marker[]
-  aspect: AspectId
-  /** Overrides for the chosen caption style. Unset means the preset's own look. */
-  captionFont?: string
-  captionAccent?: string
-}
-
-export interface Timeline {
-  tracks: Track[]
-  items: Record<string, TimelineItem>
-  settings: TimelineSettings
-  /** Length of the original upload in seconds. Trims never reach past it. */
-  sourceDuration: number
-}
-
-/**
- * Every change to a timeline is a TimelineOp. The assistant never touches video
- * directly: it returns ops, the UI validates them and applies them.
- * `applyOp` always produces a `patch` as the inverse, so any op can be undone.
- */
-export type TimelineOp =
-  | { type: 'trim'; itemId: string; edge: 'start' | 'end'; to: number }
-  | { type: 'split'; itemId: string; at: number; newId?: string }
-  | { type: 'move'; itemId: string; start: number; trackId?: string }
-  | { type: 'delete'; itemIds: string[] }
-  | { type: 'rippleDelete'; from: number; to: number; trackIds?: string[] }
-  | { type: 'cutSource'; srcFrom: number; srcTo: number }
-  | { type: 'restoreSource'; srcFrom: number; srcTo: number; captions?: TimelineItem[] }
-  | { type: 'addCaptions'; items: TimelineItem[]; replace?: boolean }
-  | { type: 'addEffect'; item: TimelineItem }
-  | { type: 'setCrop'; crop: CropState; keyframes?: Keyframe[] }
-  | { type: 'setCaptionStyle'; styleId: string }
-  | { type: 'setSettings'; patch: Partial<TimelineSettings> }
-  | { type: 'addMarker'; marker: Marker }
-  | { type: 'removeMarker'; id: string }
-  | {
-      type: 'patch'
-      upsert: TimelineItem[]
-      remove: string[]
-      settings?: Partial<TimelineSettings>
-    }
-  | { type: 'batch'; ops: TimelineOp[]; label?: string }
 
 /* ------------------------------------------------------------------ */
 /* History and chat                                                      */

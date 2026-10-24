@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applyOp } from './ops'
+import { applyOp } from '@lypcut/timeline-core'
 import { fixture } from './fixtures'
 import { toOtio } from './otio'
-import { timelineDuration } from './queries'
-import { cutWords } from './transcript'
+import { timelineDuration } from '@lypcut/timeline-core'
+import { cutWords } from '@lypcut/timeline-core'
 
 type Node = {
   OTIO_SCHEMA: string

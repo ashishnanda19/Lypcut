@@ -25,7 +25,10 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Absolute imports */
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@lypcut/timeline-core": ["../packages/timeline-core/src/index.ts"]
+    }
   },
   "include": ["src"]
 }
