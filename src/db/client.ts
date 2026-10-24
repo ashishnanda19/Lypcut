@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import type { Config } from '../lib/config.js'
-import * as schema from './schema.js'
+import * as schema from './schema/index.js'
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>
 
@@ -22,7 +22,7 @@ export function createDatabase(cfg: Pick<Config, 'DATABASE_URL' | 'DATABASE_POOL
   // An idle client erroring (for example a Postgres restart) must not crash the process.
   pool.on('error', () => undefined)
   return {
-    db: drizzle(pool, { schema }),
+    db: drizzle(pool, { schema, casing: 'snake_case' }),
     pool,
     ping: async () => {
       await pool.query('select 1')
