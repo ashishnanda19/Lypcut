@@ -5,13 +5,13 @@ API and workers for Lypcut, an AI-native video editor. Node 22, TypeScript (stri
 
 Phase 1 covers accounts, resumable uploads, the processing pipeline (scenes, Hindi/Hinglish/English transcription,
 hooks and chapters), live job status, the reversible timeline API with undo, redo, history and restore, read APIs and
-search, and OpenTimelineIO export. The front end is the sibling folder `../lypcut`. Reference: [API.md](API.md) (and
+search, and OpenTimelineIO export. The front end is the parent folder (`..`). Reference: [API.md](API.md) (and
 `/docs` on a running server), [DECISIONS.md](DECISIONS.md) for why things are the way they are.
 
 ## How it fits together
 
 ```
- Browser (../lypcut)
+ Browser (front end)
    │  /api (cookies)            │  PUT parts (presigned, straight to storage)      │  GET video (presigned)
    ▼                            ▼                                                  ▼
  ┌────────────── API (Fastify) ──────────────┐                      ┌── Object storage (S3 / MinIO) ──┐
@@ -55,7 +55,7 @@ the speech model (~465 MB for `small`) into a volume. Then:
 
 The credentials above are local-development defaults only.
 
-To use it from the front end: `cd ../lypcut && echo "VITE_API_MODE=real" > .env.local && npm run dev`
+To use it from the front end: `cd .. && echo "VITE_API_MODE=real" > .env.local && npm run dev`
 (`http://localhost:5173` is in `CORS_ORIGINS` by default).
 
 **First run with real recordings.** The default model (`small`) handles Hinglish well enough to build the product on,
@@ -165,7 +165,7 @@ GET  /api/projects/:id/export/otio           the current timeline as an OpenTime
 
 Always send back the `version` you last saw as `baseVersion`; a stale one is a `409 VERSION_CONFLICT`. An invalid op is a
 `422 INVALID_OP` that names the op. The engine lives in `src/timeline-core` and has no I/O. `npm run parity` compares it with the
-front end's copy on random edits (the front end must be at `../lypcut`).
+front end's copy on random edits (the front end is the parent folder).
 
 ### Following a job
 

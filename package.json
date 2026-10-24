@@ -23,7 +23,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "models:download": "tsx --env-file-if-exists=.env src/tools/download-whisper-model.ts",
-    "parity": "cd ../lypcut && ../lypcut-backend/node_modules/.bin/tsx --tsconfig tsconfig.app.json ../lypcut-backend/scripts/parity/frontend-parity.mts"
+    "parity": "cd .. && backend/node_modules/.bin/tsx --tsconfig tsconfig.app.json backend/scripts/parity/frontend-parity.mts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",
