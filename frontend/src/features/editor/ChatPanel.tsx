@@ -14,9 +14,11 @@ import { uid } from '@/lib/ids'
 import { rise } from '@/lib/motion'
 import { useStreamedText } from '@/lib/useStreamedText'
 import { useStyle } from '@/api/hooks'
+import { isReal } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { usePrefs } from '@/stores/prefs'
 import type { ChatMessage as Msg, Lang, QuestionCard } from '@/types'
+import { answerAssistant, askAssistant, reelAssistant, type AssistantContext } from './assistant'
 import { clock } from './clock'
 import { useEditorData } from './data'
 import { answerQuestion, plan, reelPlan, type PlannerContext, type PlannerResult } from './planner'
@@ -42,6 +44,23 @@ function usePlannerContext() {
       playhead: clock.time,
     }),
     [data, user?.language, style, applyStyle],
+  )
+}
+
+/** What the real assistant is told about where the person is. Read when a request is made, not on every render. */
+function useAssistantContext() {
+  const { project } = useEditorData()
+  const lang = (useAuth((s) => s.user?.language) ?? 'hinglish') as Lang
+  const applyStyle = usePrefs((s) => s.applyStyle)
+  return useCallback(
+    (): AssistantContext => ({
+      projectId: project.id,
+      playhead: clock.time,
+      applyStyle,
+      messages: useEditor.getState().messages,
+      lang,
+    }),
+    [project.id, lang, applyStyle],
   )
 }
 
@@ -196,6 +215,7 @@ export function ChatPanel() {
   const setTab = usePrefs((s) => s.setTab)
   const { data: style } = useStyle()
   const ctx = usePlannerContext()
+  const actx = useAssistantContext()
   const listRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const s = useEditor
@@ -235,11 +255,12 @@ export function ChatPanel() {
     [s, setTab],
   )
 
+  /** Shows the thinking bubble while `make` works, then the answer. The stand-in pauses a moment so it feels like thinking. */
   const reply = useCallback(
-    async (make: () => PlannerResult) => {
+    async (make: () => PlannerResult | Promise<PlannerResult>) => {
       s.getState().setThinking(true)
-      await sleep(520 + Math.random() * 420)
-      const res = make()
+      if (!isReal) await sleep(520 + Math.random() * 420)
+      const res = await make()
       s.getState().setThinking(false)
       deliver(res)
     },
@@ -248,10 +269,12 @@ export function ChatPanel() {
 
   const send = useCallback(
     (text: string) => {
+      // The assistant reads the conversation so far, so it is read before this message joins it.
+      const c = actx()
       s.getState().addMessage({ id: uid('m'), from: 'user', text, at: Date.now() })
-      void reply(() => plan(text, ctx()))
+      void reply(() => (isReal ? askAssistant(c, text) : plan(text, ctx())))
     },
-    [s, reply, ctx],
+    [s, reply, ctx, actx],
   )
 
   const answer = useCallback(
@@ -259,11 +282,14 @@ export function ChatPanel() {
       const q = m.question
       if (!q) return
       const label = q.options.find((o) => o.id === optionId)?.label ?? optionId
+      const c = actx()
       s.getState().patchMessage(m.id, { question: { ...q, answer: optionId } })
       s.getState().addMessage({ id: uid('m'), from: 'user', text: label, at: Date.now() })
-      void reply(() => answerQuestion(q, optionId, ctx()))
+      void reply(() =>
+        isReal ? answerAssistant(c, q, optionId) : answerQuestion(q, optionId, ctx()),
+      )
     },
-    [s, reply, ctx],
+    [s, reply, ctx, actx],
   )
 
   // Another panel asked the chat to do something (Make a Reel from a search result, and so on).
@@ -273,16 +299,23 @@ export function ChatPanel() {
     handled.current = ask.id
     s.getState().clearAsk()
     setTab('chat')
+    const c = actx()
     s.getState().addMessage({ id: uid('m'), from: 'user', text: ask.text, at: Date.now() })
     if (ask.reel) {
       const r = ask.reel
       void reply(() =>
-        reelPlan(ctx(), { srcFrom: r.srcFrom, srcTo: r.srcTo, title: r.title, fast: true }, lang),
+        isReal
+          ? reelAssistant(c, r)
+          : reelPlan(
+              ctx(),
+              { srcFrom: r.srcFrom, srcTo: r.srcTo, title: r.title, fast: true },
+              lang,
+            ),
       )
     } else {
-      void reply(() => plan(ask.text, ctx()))
+      void reply(() => (isReal ? askAssistant(c, ask.text) : plan(ask.text, ctx())))
     }
-  }, [ask, ctx, lang, reply, s, setTab])
+  }, [ask, ctx, actx, lang, reply, s, setTab])
 
   const toggleStyle = (on: boolean) => {
     if (on && !style?.connected) {

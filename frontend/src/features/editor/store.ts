@@ -57,6 +57,7 @@ export interface CommitMeta {
   author: 'you' | 'ai'
   label: string
   editId?: string
+  undoesEditId?: string
 }
 
 export type CommitResult = { ok: true; version: Version } | { ok: false; error: string }
@@ -259,6 +260,7 @@ export const useEditor = create<EditorState>()((set, get) => ({
       inverse: applied.inverse,
       after: applied.timeline,
       editId: meta.editId,
+      undoesEditId: meta.undoesEditId,
     }
     // Editing from an earlier point keeps the later versions, in the archive, so nothing is lost.
     const keep = s.versions.slice(0, s.cursor + 1)
@@ -383,7 +385,11 @@ export const useEditor = create<EditorState>()((set, get) => ({
         error: 'Later edits changed the same parts. Restore an older version from History instead.',
       }
     }
-    const res = get().commit(version.inverse, { author: 'you', label: `Undid: ${rec.plan.title}` })
+    const res = get().commit(version.inverse, {
+      author: 'you',
+      label: `Undid: ${rec.plan.title}`,
+      undoesEditId: editId,
+    })
     if (!res.ok) return { ok: false, conflict: false, error: res.error }
     set((st) => ({ edits: { ...st.edits, [editId]: { ...rec, undoneVersionId: res.version.id } } }))
     return { ok: true }

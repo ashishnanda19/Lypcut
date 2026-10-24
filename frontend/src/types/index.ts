@@ -160,6 +160,8 @@ export interface Version {
   after: Timeline
   /** The Edit card that produced this version, if any. */
   editId?: string
+  /** The Edit card this version takes back (an AI edit undone out of order), if any. */
+  undoesEditId?: string
   /** The server's number for this version once it has saved it. Unset in the mock, and until the save lands. */
   serverN?: number
 }

@@ -97,6 +97,15 @@ const toVersion = (d: DetailDto): Version => ({
   serverN: d.version.n,
 })
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * An edit the assistant planned is applied by the server from its own saved plan (same op, same label), not from what
+ * the editor sends. Anything else, including taking such an edit back, is an ordinary save of the editor's op.
+ */
+const isServerPlan = (v: Version) =>
+  v.author === 'ai' && !!v.editId && !v.undoesEditId && UUID.test(v.editId)
+
 const transient = (e: unknown) => e instanceof ApiError && (e.status === 0 || e.status >= 500)
 
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -184,13 +193,26 @@ class Remote implements Syncer {
 
   commit(version: Version, before: Timeline) {
     this.enqueue(async () => {
-      const res = await api.post<CommitDto>(`${base(this.projectId)}/ops`, {
-        baseVersion: this.version,
-        ops: [version.op],
-        label: version.label,
-        author: version.author,
-        ...(version.editId ? { editId: version.editId } : {}),
-      })
+      const res = await api.post<CommitDto>(
+        ...(isServerPlan(version)
+          ? ([
+              `/projects/${this.projectId}/plans/${version.editId}/apply`,
+              { baseVersion: this.version },
+            ] as const)
+          : ([
+              `${base(this.projectId)}/ops`,
+              {
+                baseVersion: this.version,
+                ops: [version.op],
+                label: version.label,
+                author: version.author,
+                ...(version.editId ? { editId: version.editId } : {}),
+                ...(version.undoesEditId && UUID.test(version.undoesEditId)
+                  ? { undoesEditId: version.undoesEditId }
+                  : {}),
+              },
+            ] as const)),
+      )
       this.version = res.state.version
       const store = useEditor.getState()
       const mine = [...store.versions, ...store.archived].find((v) => v.id === version.id)
@@ -268,9 +290,11 @@ class Remote implements Syncer {
     const reason =
       e instanceof ApiError && e.code === 'VERSION_CONFLICT'
         ? 'This project was changed somewhere else, so you are now seeing the latest version.'
-        : e instanceof ApiError && e.code === 'INVALID_OP'
-          ? `That change could not be saved (${e.message}). The last saved version is back.`
-          : 'Your last change could not be saved. The last saved version is back.'
+        : e instanceof ApiError && e.code === 'STALE_PLAN'
+          ? 'Your edit changed since the assistant made that plan, and it no longer fits. Ask again for a fresh one.'
+          : e instanceof ApiError && e.code === 'INVALID_OP'
+            ? `That change could not be saved (${e.message}). The last saved version is back.`
+            : 'Your last change could not be saved. The last saved version is back.'
     await this.reload(reason)
   }
 

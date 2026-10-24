@@ -41,6 +41,10 @@ class FakeServer {
   last = 0
   redo: number[] = []
   log: string[] = []
+  /** What was sent with each save, in order. */
+  bodies: Array<{ line: string; body: Record<string, unknown> }> = []
+  /** Plans the assistant has made, by id. */
+  plans = new Map<string, { title: string; op: TimelineOp }>()
   /** Failures to hand out before behaving, keyed by the start of the request line. */
   failures: Array<{ match: string; error: () => Error; times: number }> = []
   delayMs = 0
@@ -51,6 +55,8 @@ class FakeServer {
     this.last = 0
     this.redo = []
     this.log = []
+    this.bodies = []
+    this.plans.clear()
     this.failures = []
     this.delayMs = 0
     this.rows.set(0, {
@@ -117,11 +123,24 @@ class FakeServer {
           ? ` @${(body as { baseVersion: number }).baseVersion}`
           : ''),
     )
+    if (body && method === 'POST') this.bodies.push({ line, body: body as Record<string, unknown> })
     if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs))
     const f = this.failures.find((x) => line.startsWith(x.match) && x.times > 0)
     if (f) {
       f.times--
       throw f.error()
+    }
+    const applied = /^POST \/projects\/p1\/plans\/([^/]+)\/apply$/.exec(line)
+    if (applied) {
+      const plan = this.plans.get(applied[1]!)
+      if (!plan) throw new ApiError('Not found.', 404, undefined, 'NOT_FOUND')
+      return this.handle('POST', '/projects/p1/timeline/ops', {
+        baseVersion: (body as { baseVersion: number }).baseVersion,
+        ops: [plan.op],
+        label: plan.title,
+        author: 'ai',
+        editId: applied[1],
+      })
     }
     if (line === 'GET ') return this.state()
     if (line.startsWith('GET /history'))
@@ -523,5 +542,79 @@ describe('leaving', () => {
     await settle(20)
     expect(server.log.filter((l) => l.startsWith('POST'))).toEqual([])
     attachSyncer(null)
+  })
+})
+
+describe('edits the assistant planned', () => {
+  const PLAN_ID = '01a16ef1-c3ef-7fbc-a676-db6cf5e500f5'
+  const plan = (id: string, op: TimelineOp) => ({
+    id,
+    title: 'Shorter intro',
+    description: '',
+    op,
+    strip: [],
+    summary: [],
+  })
+
+  it('are applied by the server from its own saved plan, with the plan’s id', async () => {
+    await openRemote('p1', [])
+    const op = trimEnd(video[0]!.id, video[0]!.start + 10)
+    server.plans.set(PLAN_ID, { title: 'Shorter intro', op })
+    store().registerEdit(plan(PLAN_ID, op))
+    expect(store().applyEdit(PLAN_ID).ok).toBe(true)
+    await drained()
+    expect(server.log).toContain(`POST /projects/p1/plans/${PLAN_ID}/apply @0`)
+    expect(server.rows.get(1)).toMatchObject({
+      author: 'ai',
+      editId: PLAN_ID,
+      label: 'Shorter intro',
+    })
+    expect(store().versions.find((v) => v.editId === PLAN_ID)!.serverN).toBe(1)
+  })
+
+  it('an edit from the stand-in planner (not a server plan) is saved as an ordinary edit', async () => {
+    await openRemote('p1', [])
+    store().registerEdit(plan('edit_ab12', trimEnd(video[0]!.id, video[0]!.start + 10)))
+    expect(store().applyEdit('edit_ab12').ok).toBe(true)
+    await drained()
+    expect(server.log).toContain('POST /ops @0')
+    expect(server.rows.get(1)).toMatchObject({ author: 'ai', editId: 'edit_ab12' })
+  })
+
+  it('taking one back out of order is saved as an ordinary edit that says which plan it undoes', async () => {
+    await openRemote('p1', [])
+    const op = trimEnd(video[0]!.id, video[0]!.start + 10)
+    server.plans.set(PLAN_ID, { title: 'Shorter intro', op })
+    store().registerEdit(plan(PLAN_ID, op))
+    store().applyEdit(PLAN_ID)
+    // A later edit of something else, so undoing the plan is no longer a plain Undo.
+    edit(trimEnd(video[1]!.id, video[1]!.start + video[1]!.duration - 1), 'Later')
+    await drained()
+    expect(store().undoEdit(PLAN_ID).ok).toBe(true)
+    await drained()
+    const undo = server.bodies.filter((b) => b.line === 'POST /ops').at(-1)!
+    expect(undo.body).toMatchObject({ author: 'you', undoesEditId: PLAN_ID })
+    expect(undo.body).not.toHaveProperty('editId')
+  })
+
+  it('a plan that no longer fits reloads the saved version and tells the person to ask again', async () => {
+    await openRemote('p1', [])
+    const op = trimEnd(video[0]!.id, video[0]!.start + 10)
+    server.plans.set(PLAN_ID, { title: 'Shorter intro', op })
+    server.failures.push({
+      match: 'POST /projects/p1/plans',
+      times: 1,
+      error: () => new ApiError('Changed.', 409, undefined, 'STALE_PLAN'),
+    })
+    store().registerEdit(plan(PLAN_ID, op))
+    store().applyEdit(PLAN_ID)
+    await drained()
+    expect(head().n).toBe(0)
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Reloaded the saved version',
+        description: expect.stringContaining('Ask again'),
+      }),
+    )
   })
 })

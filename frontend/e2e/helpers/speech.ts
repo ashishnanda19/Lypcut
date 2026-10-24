@@ -7,6 +7,10 @@ const LINES = [
   'Namaste doston, aaj hum baat karenge funding ke baare mein.',
   'Meri sabse badi galti thi ki maine bina socha paisa kharch kar diya.',
   'Term sheet par sign karne se pehle lawyer se zaroor padhwaiye.',
+  'Doosri baat, apni team ko hire karte waqt dhyaan rakhiye ki log aapke vision se jude hue ho.',
+  'Teesri baat, customers se roz baat kijiye, kyunki unse behtar teacher koi nahi hai.',
+  'Aur aakhri baat, apne cash flow par har hafte nazar rakhiye, warna runway achanak khatam ho jaati hai.',
+  'Agar yeh video pasand aaya to channel ko subscribe zaroor kijiye.',
 ]
 
 /**
@@ -22,7 +26,8 @@ export function speechVideo(): string | null {
   if (existsSync(out)) return out
   try {
     const aiff = path.join(dir, 'talk.aiff')
-    execFileSync('say', ['-v', 'Lekha', '-o', aiff, LINES.join(' ')])
+    // A pause after each line, so the transcript comes back as separate sentences.
+    execFileSync('say', ['-v', 'Lekha', '-o', aiff, LINES.join(' [[slnc 1100]] ')])
     execFileSync(
       'ffmpeg',
       [
