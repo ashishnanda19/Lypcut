@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
+    "eval": "vitest run -c vitest.eval.config.ts",
     "fixtures": "tsx scripts/make-fixture.ts",
     "lint": "eslint .",
     "format": "prettier --write .",

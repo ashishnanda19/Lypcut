@@ -48,12 +48,14 @@ export const fakePlanner: FakeHandler = (req) => {
 
   // Where in the video: "where I talk about funding", "funding kahan hai", "find ..."
   const about = p.match(/(?:talk about|about|baare mein|baare me|ke baare|kahan|where)\s+(.{3,})$/)
+  // "funding kahan hai": the thing comes first, the question word after it.
+  const before = p.match(/^(.{3,}?)\s+(?:kahan|kahaan|कहां|कहाँ)(?:\s+(?:hai|ho|है))?$/)
   const finds =
     (has(p, ['where', 'kahan', 'kahaan', 'कहां', 'कहाँ', 'find', 'dhundh', 'khoj', 'search']) &&
-      about) ||
+      (about || before)) ||
     /^(find|search|dhundho|dhundh)\s+(.+)/.test(p)
   if (finds) {
-    const q = (about?.[1] ?? p.replace(/^(find|search|dhundho|dhundh)\s+/, ''))
+    const q = (before?.[1] ?? about?.[1] ?? p.replace(/^(find|search|dhundho|dhundh)\s+/, ''))
       .replace(/\b(hai|ho|kahan|where|i talk|mein|me)\b/g, '')
       .trim()
     if (q.length >= 2 && !has(p, ['hook', 'best', 'highlight']))
@@ -64,9 +66,14 @@ export const fakePlanner: FakeHandler = (req) => {
   const cut = p.match(
     /(?:cut|kaat|kaato|hata|hatao|remove)\s+(?:sentence|sentences|line|lines|vakya)\s+(\d{1,4})(?:\s*(?:to|se|-|tak)\s*(\d{1,4}))?/,
   )
-  if (cut) {
-    const a = Number(cut[1]) - 1
-    const b = (cut[2] ? Number(cut[2]) : Number(cut[1])) - 1
+  // ...or the other way round, as Hinglish puts it: "sentence 2 se 5 tak hata do"
+  const cutAfter = p.match(
+    /(?:sentence|sentences|line|lines|vakya)\s+(\d{1,4})(?:\s*(?:to|se|-|tak)\s*(\d{1,4}))?\s*(?:tak\s+)?(?:cut|kaat|kaato|kaat do|hata|hatao|hata do|remove|delete)/,
+  )
+  const range = cut ?? cutAfter
+  if (range) {
+    const a = Number(range[1]) - 1
+    const b = (range[2] ? Number(range[2]) : Number(range[1])) - 1
     return call('cut_range', {
       firstSentence: `s${Math.max(0, a)}`,
       lastSentence: `s${Math.max(0, b)}`,

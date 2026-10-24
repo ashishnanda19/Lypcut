@@ -22,5 +22,14 @@
     }
   },
   "exclude": ["scripts/parity"],
-  "include": ["src", "test", "scripts", "drizzle.config.ts", "vitest.config.ts", "eslint.config.js"]
+  "include": [
+    "src",
+    "test",
+    "eval",
+    "scripts",
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "vitest.eval.config.ts",
+    "eslint.config.js"
+  ]
 }
