@@ -14,6 +14,7 @@ import { toast } from '@/components/ui/Toast'
 import { timeLeft } from '@/lib/format'
 import { formatDuration } from '@/lib/time'
 import { AI } from '@/lib/config'
+import { isReal } from '@/lib/runtime'
 import type { Project } from '@/types'
 
 const STEPS: StepperStep[] = [
@@ -186,7 +187,10 @@ export function ProcessingView({ project }: { project: Project }) {
   )
 }
 
-/** A sample upload that stopped partway. There is no real file to resume from. */
+/**
+ * An upload that stopped partway. The file lives in the browser that sent it, so the person chooses it again;
+ * against the real backend the same project and the parts already sent are picked up where they stopped.
+ */
 export function UploadPausedView({ project }: { project: Project }) {
   const del = useDeleteProject()
   return (
@@ -203,7 +207,9 @@ export function UploadPausedView({ project }: { project: Project }) {
       />
       <div className="mt-6 flex justify-center gap-2">
         <Button asChild variant="primary">
-          <Link to="/app/new">Choose the file again</Link>
+          <Link to={isReal ? `/app/new?resume=${project.id}` : '/app/new'}>
+            Choose the file again
+          </Link>
         </Button>
         <Button
           variant="ghost"

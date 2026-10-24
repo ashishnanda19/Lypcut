@@ -10,6 +10,7 @@ import { toast } from '@/components/ui/Toast'
 import { cn } from '@/lib/cn'
 import { AI } from '@/lib/config'
 import { greeting, useAuth } from '@/stores/auth'
+import { isReal } from '@/lib/runtime'
 import { useUploadQueue } from '@/stores/uploadQueue'
 import type { Project, ProjectStatus } from '@/types'
 import { DropZone } from './DropZone'
@@ -302,15 +303,21 @@ export function DashboardPage() {
         ) : list.length === 0 ? (
           <EmptyState
             title="No projects yet"
-            description="Upload a long video above, or look around with a few sample projects first."
+            description={
+              isReal
+                ? 'Upload a long video above. We transcribe it and find the moments worth posting.'
+                : 'Upload a long video above, or look around with a few sample projects first.'
+            }
             action={
-              <Button
-                variant="secondary"
-                loading={samples.isPending}
-                onClick={() => samples.mutate()}
-              >
-                Add sample projects
-              </Button>
+              isReal ? undefined : (
+                <Button
+                  variant="secondary"
+                  loading={samples.isPending}
+                  onClick={() => samples.mutate()}
+                >
+                  Add sample projects
+                </Button>
+              )
             }
           />
         ) : shown.length === 0 ? (

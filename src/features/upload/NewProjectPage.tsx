@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowRight, CircleAlert, FileVideo, Pause, Play, RotateCw, X, Check } from 'lucide-react'
-import { useCreateProject } from '@/api/hooks'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { ProgressBar } from '@/components/ui/ProgressBar'
@@ -9,7 +8,9 @@ import { DropZone } from '@/features/dashboard/DropZone'
 import { fileSize, timeLeft } from '@/lib/format'
 import { formatDuration } from '@/lib/time'
 import { uid } from '@/lib/ids'
+import { isReal } from '@/lib/runtime'
 import { useUploadQueue } from '@/stores/uploadQueue'
+import { startUpload, type UploadHandle } from './index'
 
 type Phase = 'uploading' | 'paused' | 'creating' | 'done' | 'error'
 interface Item {
@@ -17,16 +18,16 @@ interface Item {
   file: File
   progress: number
   phase: Phase
-  /** Total simulated upload time in ms. Longer files take longer, within a sane range. */
-  totalMs: number
-  startedAt: number
+  /** Rough seconds left, once there is enough data to guess. */
+  secondsLeft: number | null
   durationSec?: number
   projectId?: string
   error?: string
+  /** False for a file that will never be accepted (too long, not a video): Retry would only repeat the refusal. */
+  retryable: boolean
 }
 
 const MAX_BYTES = 8 * 1024 ** 3
-const TICK = 120
 
 /** Read the real length of the video in the browser, so the project shows the right duration. */
 function readDuration(file: File): Promise<number | undefined> {
@@ -53,19 +54,23 @@ function makeItem(file: File): Item {
     progress: 0,
     phase: tooBig ? 'error' : 'uploading',
     error: tooBig
-      ? `This file is ${fileSize(file.size)}. The limit in this preview is ${fileSize(MAX_BYTES)}.`
+      ? `This file is ${fileSize(file.size)}. The limit is ${fileSize(MAX_BYTES)}.`
       : undefined,
-    totalMs: Math.max(3200, Math.min(11000, (file.size / (18 * 1024 ** 2)) * 1000)),
-    startedAt: Date.now(),
+    secondsLeft: null,
+    retryable: !tooBig,
   }
 }
 
 export function NewProjectPage() {
   const navigate = useNavigate()
   const take = useUploadQueue((s) => s.take)
-  const create = useCreateProject()
+  // "Choose the file again" on an unfinished upload comes here with the project to finish.
+  const resumeId = useSearchParams()[0].get('resume') ?? undefined
   const [items, setItems] = useState<Item[]>([])
   const started = useRef(false)
+  const handles = useRef(new Map<string, UploadHandle>())
+  // The project to finish goes to the first file only.
+  const resumeLeft = useRef(resumeId)
 
   const patch = useCallback(
     (id: string, p: Partial<Item>) =>
@@ -73,16 +78,39 @@ export function NewProjectPage() {
     [],
   )
 
-  const add = useCallback((files: File[]) => {
-    const next = files.map(makeItem)
-    setItems((list) => [...list, ...next])
-    next.forEach((it) => {
-      void readDuration(it.file).then(
-        (d) =>
-          d && setItems((list) => list.map((x) => (x.id === it.id ? { ...x, durationSec: d } : x))),
+  const begin = useCallback(
+    async (it: Item) => {
+      const durationSec = await readDuration(it.file)
+      if (durationSec) patch(it.id, { durationSec })
+      const into = resumeLeft.current
+      resumeLeft.current = undefined
+      handles.current.set(
+        it.id,
+        startUpload(
+          it.file,
+          durationSec,
+          {
+            progress: (progress, secondsLeft) =>
+              patch(it.id, { progress, secondsLeft, phase: 'uploading' }),
+            finishing: () => patch(it.id, { phase: 'creating', progress: 100 }),
+            done: (projectId) => patch(it.id, { phase: 'done', projectId }),
+            failed: (error, retryable) => patch(it.id, { phase: 'error', error, retryable }),
+          },
+          into,
+        ),
       )
-    })
-  }, [])
+    },
+    [patch],
+  )
+
+  const add = useCallback(
+    (files: File[]) => {
+      const next = files.map(makeItem)
+      setItems((list) => [...list, ...next])
+      next.filter((it) => it.phase === 'uploading').forEach((it) => void begin(it))
+    },
+    [begin],
+  )
 
   // Files chosen on the dashboard are waiting in the queue.
   useEffect(() => {
@@ -93,39 +121,12 @@ export function NewProjectPage() {
     if (staged.length) add(staged)
   }, [take, add])
 
-  const finish = useCallback(
-    async (it: Item) => {
-      patch(it.id, { phase: 'creating', progress: 100 })
-      try {
-        const res = await create.mutateAsync({
-          fileName: it.file.name,
-          durationSec: it.durationSec,
-        })
-        patch(it.id, { phase: 'done', projectId: res.project.id })
-      } catch (e) {
-        patch(it.id, { phase: 'error', error: e instanceof Error ? e.message : 'Upload failed.' })
-      }
-    },
-    [create, patch],
-  )
-
-  // One timer moves every upload that is still going.
-  const itemsRef = useRef(items)
+  // Leaving the page stops the transfer (the file lives in this tab). What already arrived stays with the project,
+  // which then offers to finish it.
   useEffect(() => {
-    itemsRef.current = items
-  })
-  useEffect(() => {
-    const id = setInterval(() => {
-      const now = Date.now()
-      for (const it of itemsRef.current) {
-        if (it.phase !== 'uploading') continue
-        const p = Math.min(100, ((now - it.startedAt) / it.totalMs) * 100)
-        if (p >= 100) void finish(it)
-        else patch(it.id, { progress: Math.round(p) })
-      }
-    }, TICK)
-    return () => clearInterval(id)
-  }, [finish, patch])
+    const live = handles.current
+    return () => live.forEach((h) => h.pause())
+  }, [])
 
   // One file, finished: go straight to its processing screen.
   useEffect(() => {
@@ -146,14 +147,24 @@ export function NewProjectPage() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [uploading])
 
-  // Pausing keeps the progress; resuming picks the clock up from where it stopped.
-  const pause = (it: Item) => patch(it.id, { phase: 'paused' })
-  const resume = (it: Item) =>
-    patch(it.id, { phase: 'uploading', startedAt: Date.now() - (it.progress / 100) * it.totalMs })
-
+  const pause = (it: Item) => {
+    handles.current.get(it.id)?.pause()
+    patch(it.id, { phase: 'paused' })
+  }
+  const resume = (it: Item) => {
+    handles.current.get(it.id)?.resume()
+    patch(it.id, { phase: 'uploading' })
+  }
   const retry = (it: Item) => {
-    if (it.projectId || it.progress >= 100) void finish(it)
-    else patch(it.id, { phase: 'uploading', progress: 0, startedAt: Date.now(), error: undefined })
+    patch(it.id, { phase: 'uploading', error: undefined })
+    const h = handles.current.get(it.id)
+    if (h) h.retry()
+    else void begin(it)
+  }
+  const remove = (it: Item) => {
+    handles.current.get(it.id)?.cancel()
+    handles.current.delete(it.id)
+    setItems((l) => l.filter((x) => x.id !== it.id))
   }
 
   return (
@@ -161,7 +172,9 @@ export function NewProjectPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-[-0.035em] sm:text-4xl">New project</h1>
         <p className="mt-1.5 text-muted">
-          Add a long video. We split it, transcribe it and find the moments worth posting.
+          {resumeId && isReal
+            ? 'Choose the same video again and we will carry on from where it stopped.'
+            : 'Add a long video. We split it, transcribe it and find the moments worth posting.'}
         </p>
       </div>
 
@@ -174,7 +187,6 @@ export function NewProjectPage() {
           </h2>
           <ul className="space-y-3">
             {items.map((it) => {
-              const left = ((100 - it.progress) / 100) * (it.totalMs / 1000)
               return (
                 <li
                   key={it.id}
@@ -191,7 +203,8 @@ export function NewProjectPage() {
                       {it.phase === 'uploading' && (
                         <span className="tnum">
                           {' '}
-                          · {it.progress}% · {timeLeft(left)} left
+                          · {it.progress}%
+                          {it.secondsLeft !== null && ` · ${timeLeft(it.secondsLeft)} left`}
                         </span>
                       )}
                       {it.phase === 'paused' && (
@@ -247,7 +260,7 @@ export function NewProjectPage() {
                   {it.phase === 'done' && items.length === 1 && (
                     <Check className="size-5 text-teal-text" aria-label="Uploaded" />
                   )}
-                  {it.phase === 'error' && it.file.size <= MAX_BYTES && (
+                  {it.phase === 'error' && it.retryable && (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -261,7 +274,7 @@ export function NewProjectPage() {
                     <IconButton
                       label={`Remove ${it.file.name}`}
                       size="sm"
-                      onClick={() => setItems((l) => l.filter((x) => x.id !== it.id))}
+                      onClick={() => remove(it)}
                     >
                       <X className="size-4" aria-hidden="true" />
                     </IconButton>
@@ -270,10 +283,11 @@ export function NewProjectPage() {
               )
             })}
           </ul>
-          <p className="mt-4 text-xs text-faint">
-            Preview: the upload is simulated, and your file stays in this browser. Name a file with
-            "fail" in it to see what a failed run looks like.
-          </p>
+          {!isReal && (
+            <p className="mt-4 text-xs text-faint">
+              Preview: the upload is simulated, and your file stays in this browser.
+            </p>
+          )}
         </section>
       )}
     </div>
