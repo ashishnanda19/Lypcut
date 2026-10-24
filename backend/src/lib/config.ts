@@ -186,6 +186,31 @@ export const envSchema = z
     TOKEN_ENCRYPTION_OLD_KEYS: csv.default([]),
 
     /** Style analysis jobs at once. Lower than editing work, so learning a style never slows someone's edit. */
+    /**
+     * Instagram, through Meta's official API with Instagram Login, read-only. `auto` uses it when the three settings below are
+     * set; otherwise a built-in stand-in (a fake consent screen and fixture Reels) outside production, and nothing in production,
+     * where Instagram simply is not offered and manual upload still works.
+     */
+    INSTAGRAM_CLIENT: z.enum(['auto', 'real', 'fake']).default('auto'),
+    INSTAGRAM_APP_ID: optionalString,
+    INSTAGRAM_APP_SECRET: optionalString,
+    /** Where Instagram sends the person back to. Fixed here; never taken from a request. Must be registered in the Meta app. */
+    INSTAGRAM_REDIRECT_URI: optionalUrl,
+    INSTAGRAM_API_VERSION: z
+      .string()
+      .regex(/^v\d+\.\d+$/)
+      .default('v26.0'),
+    /** The front end's address, for sending the person back to the Style page. Defaults to the first CORS origin. */
+    APP_URL: optionalUrl,
+    /** Whose privacy policy it is, and who to write to. Shown on the public policy page Meta requires. */
+    LEGAL_ENTITY_NAME: z.string().min(1).default('Lypcut'),
+    PRIVACY_CONTACT_EMAIL: optionalString,
+    /** Instagram Reels read in one sync (the newest). */
+    STYLE_MAX_REELS: z.coerce.number().int().min(1).max(100).default(30),
+    /** A person can start a manual sync once in this long. */
+    STYLE_SYNC_COOLDOWN_SEC: z.coerce.number().int().min(0).default(3600),
+    /** A pause between calls to Instagram for one account, so a sync never bursts. */
+    STYLE_IG_CALL_INTERVAL_MS: z.coerce.number().int().min(0).default(300),
     /** Largest file accepted as a style Reel. A 90 second phone video is well under this. */
     STYLE_MAX_REEL_BYTES: z.coerce
       .number()
@@ -255,6 +280,39 @@ export const envSchema = z
         path: ['TOKEN_ENCRYPTION_KEY'],
         message: 'required in production; generate one with: echo "k1:$(openssl rand -base64 32)"',
       })
+    }
+    const igSet = [env.INSTAGRAM_APP_ID, env.INSTAGRAM_APP_SECRET, env.INSTAGRAM_REDIRECT_URI]
+    if (igSet.some(Boolean) && !igSet.every(Boolean)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['INSTAGRAM_APP_ID'],
+        message:
+          'INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET and INSTAGRAM_REDIRECT_URI must be set together',
+      })
+    }
+    if (env.INSTAGRAM_CLIENT === 'real' && !igSet.every(Boolean)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['INSTAGRAM_CLIENT'],
+        message:
+          'INSTAGRAM_CLIENT=real needs INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET and INSTAGRAM_REDIRECT_URI',
+      })
+    }
+    if (env.NODE_ENV === 'production') {
+      if (env.INSTAGRAM_CLIENT === 'fake') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['INSTAGRAM_CLIENT'],
+          message: 'the stand-in Instagram is not allowed in production',
+        })
+      }
+      if (env.INSTAGRAM_REDIRECT_URI && !env.INSTAGRAM_REDIRECT_URI.startsWith('https://')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['INSTAGRAM_REDIRECT_URI'],
+          message: 'must be an https address in production',
+        })
+      }
     }
     if (env.EMBEDDING_PROVIDER === 'hosted' && !(env.EMBEDDING_API_URL && env.EMBEDDING_API_KEY)) {
       ctx.addIssue({

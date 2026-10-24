@@ -5,6 +5,7 @@ import { jobs } from '../db/schema/index.js'
 import { bullConnectionOptions, createRedis } from '../queue/connection.js'
 import { QUEUES, type JobData } from '../queue/queues.js'
 import { StyleAnalysis } from '../style/analysis/service.js'
+import { InstagramSync } from '../style/jobs/sync.js'
 import type { TranscriptionProvider } from '../transcription/types.js'
 import type { WorkerContext } from './maintenance.js'
 
@@ -62,6 +63,30 @@ export async function processStyleJob(
       result = { ...r }
       break
     }
+    case 'style_sync':
+    case 'style_refresh': {
+      if (!ctx.deps.instagram) {
+        result = { skipped: 'instagram is not set up' }
+        break
+      }
+      const sync = new InstagramSync(ctx.deps, ctx.log, ctx.deps.instagram)
+      if (row.type === 'style_refresh') {
+        result = { ...(await sync.refreshToken(row.userId!)) }
+        break
+      }
+      let last = 0
+      result = {
+        ...(await sync.sync(row.userId!, provider, (done, total) => {
+          const progress = Math.min(95, Math.round((done / Math.max(1, total)) * 95))
+          if (progress !== last) {
+            last = progress
+            void mark(ctx, row.id, { progress }).catch(() => undefined)
+          }
+        })),
+      }
+      ctx.log.info({ jobId: row.id, ...result }, 'instagram sync finished')
+      break
+    }
     case 'style_deletion': {
       const { prefix, uploads } = deletionPayload.parse(row.payload)
       // Only ever a person's style folder: never anything broader.
@@ -78,7 +103,7 @@ export async function processStyleJob(
       break
     }
     default:
-      throw new Error(`the style worker cannot run a '${row.type}' job yet`)
+      throw new Error(`the style worker cannot run a '${row.type}' job`)
   }
 
   await mark(ctx, row.id, { status: 'done', progress: 100, result, finishedAt: new Date() })

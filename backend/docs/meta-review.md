@@ -28,15 +28,15 @@ permissions. Review takes weeks. Until it passes, only people with a role on the
 
 ## 2. App settings Meta checks
 
-| Setting                           | Value                                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App name                          | Lypcut                                                                                                                                                                    |
-| App icon                          | the 1024 × 1024 icon                                                                                                                                                      |
-| Privacy Policy URL                | `https://<app-domain>/privacy` (built in Step 6; content outline in section 5)                                                                                            |
-| Data deletion                     | Callback URL `https://<api-domain>/api/privacy/instagram/deletion` (built in Step 6). **Verify** where this field sits: Instagram product settings or App settings, Basic |
-| Category                          | Photo & Video Editing, or the closest Meta offers                                                                                                                         |
-| Business email                    | the monitored address                                                                                                                                                     |
-| Business use / Business portfolio | the verified entity                                                                                                                                                       |
+| Setting                           | Value                                                                                                                                                           |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App name                          | Lypcut                                                                                                                                                          |
+| App icon                          | the 1024 × 1024 icon                                                                                                                                            |
+| Privacy Policy URL                | `https://<app-domain>/privacy` (or `https://<api-domain>/api/privacy`, which the backend already serves; content outline in section 5)                          |
+| Data deletion                     | Callback URL `https://<api-domain>/api/privacy/instagram/deletion` (built). **Verify** where this field sits: Instagram product settings or App settings, Basic |
+| Category                          | Photo & Video Editing, or the closest Meta offers                                                                                                               |
+| Business email                    | the monitored address                                                                                                                                           |
+| Business use / Business portfolio | the verified entity                                                                                                                                             |
 
 ## 3. The permissions to request, and why
 
@@ -61,7 +61,7 @@ Business Verification is the slow part, and review needs it for Advanced Access 
 
 ## 5. The privacy policy
 
-Meta checks that the policy exists at a public URL and describes the data you use ([Privacy Policy Expectations](https://developers.facebook.com/documentation/development/terms-and-policies/privacy-policy)). Lypcut serves a page at `/privacy` in Step 6; the text below is the outline it will follow, and your lawyer should approve the final wording and add the legal entity, address and contact.
+Meta checks that the policy exists at a public URL and describes the data you use ([Privacy Policy Expectations](https://developers.facebook.com/documentation/development/terms-and-policies/privacy-policy)). Lypcut serves it at `/api/privacy`; the text below is the outline it follows, and your lawyer should approve the final wording and add the legal entity, address and contact.
 
 - Who we are, and how to contact us (name, address, email).
 - What we read from Instagram, and only after you click Connect and approve: your handle, the list of your own Reels (ids, dates, durations where available), and each Reel's numbers (views, likes, comments, saves, shares, average watch time, skip rate).
@@ -121,7 +121,7 @@ Meta wants an end-to-end screencast per permission, in English where possible, w
 >
 > Lypcut test account: `<email>` / `<password>`. Instagram test account: `<handle>` / `<password>`. (Create dedicated accounts for this; never use real ones.)
 
-Meta also expects at least one successful API call per permission before you request Advanced Access: connect the test account once through the real flow (Step 6 builds it) and the calls are on record.
+Meta also expects at least one successful API call per permission before you request Advanced Access: connect the test account once through the real flow (the connect flow is built) and the calls are on record.
 
 ## 10. What you can do today, and what waits
 
@@ -132,8 +132,8 @@ Meta also expects at least one successful API call per permission before you req
 | Choose and buy the public domain; verify it in Business Settings                  | Yes                      |                                                                                  |
 | Add yourself and testers; switch your Instagram accounts to Creator               | Yes                      |                                                                                  |
 | App icon, category, business email                                                | Yes                      |                                                                                  |
-| Privacy policy page                                                               | Draft now from section 5 | The page is served by Lypcut in Step 6 (or host a static page earlier)           |
-| Data-deletion callback URL                                                        | No                       | Step 6 builds it; needs the public API domain                                    |
+| Privacy policy page                                                               | Draft now from section 5 | The backend serves it at `/api/privacy`; it needs the public API domain          |
+| Data-deletion callback URL                                                        | Built                    | Needs the public API domain                                                      |
 | Redirect URI in the dashboard                                                     | Reserve the value now    | The public API domain                                                            |
 | Screencast                                                                        | No                       | Steps 6 and 7 (the real connect flow, running on the public domain)              |
 | Submit for Advanced Access                                                        | No                       | Business Verification, the domain, the policy page, the callback, the screencast |

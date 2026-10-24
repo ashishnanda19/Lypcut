@@ -656,9 +656,9 @@ describe('the style job', () => {
     ).toBeNull()
   })
 
-  it('does not run job types it does not know yet, and ignores a job without a person', async () => {
+  it('does not run job types that are not style work, and ignores a job without a person', async () => {
     const { id } = await signup(t)
-    const [sync] = await db().insert(jobs).values({ userId: id, type: 'style_sync' }).returning()
+    const [sync] = await db().insert(jobs).values({ userId: id, type: 'otio' }).returning()
     const ctx = { deps: t.deps, log }
     await expect(
       processStyleJob(ctx, speech(), { data: { jobId: sync!.id }, attemptsMade: 0 }),

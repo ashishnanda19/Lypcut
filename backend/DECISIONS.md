@@ -530,18 +530,18 @@ the code depends on it; the Fake client must not hide the difference.
 
 Official list of metrics for `media_product_type=REELS` ([Instagram Media Insights](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media/insights.md)):
 
-| Need                 | Metric                           | Status                                    |
-| -------------------- | -------------------------------- | ----------------------------------------- |
-| Views                | `views`                          | Available, marked "in development"        |
-| Likes, comments      | `likes`, `comments`              | Available (organic only)                  |
-| Saves                | `saved`                          | Available                                 |
-| Shares               | `shares`                         | Available                                 |
-| Reach                | `reach`                          | Available (estimated)                     |
-| Average watch time   | `ig_reels_avg_watch_time`        | Available. **Seconds, not a percentage**  |
-| Total play time      | `ig_reels_video_view_total_time` | Available, "in development"               |
-| Skipped in first 3 s | `reels_skip_rate`                | Available, "estimated and in development" |
-| Interactions         | `total_interactions`             | Available, "in development"               |
-| Reposts              | `reposts`                        | Available                                 |
+| Need                 | Metric                           | Status                                                                           |
+| -------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
+| Views                | `views`                          | Available, marked "in development"                                               |
+| Likes, comments      | `likes`, `comments`              | Available (organic only)                                                         |
+| Saves                | `saved`                          | Available                                                                        |
+| Shares               | `shares`                         | Available                                                                        |
+| Reach                | `reach`                          | Available (estimated)                                                            |
+| Average watch time   | `ig_reels_avg_watch_time`        | Available. A time, not a percentage. **The unit was not confirmed** (see Step 6) |
+| Total play time      | `ig_reels_video_view_total_time` | Available, "in development"                                                      |
+| Skipped in first 3 s | `reels_skip_rate`                | Available, "estimated and in development"                                        |
+| Interactions         | `total_interactions`             | Available, "in development"                                                      |
+| Reposts              | `reposts`                        | Available                                                                        |
 
 Not available for Reels: `impressions`, `follows`, `link_clicks`, `profile_visits` and others. `total_likes`, `total_comments` and `total_views` are Facebook Login
 only. Data can lag by up to 48 hours, and an unavailable metric comes back as an **empty data set, not 0**, so "missing" and "zero" must stay different in our tables.
@@ -566,8 +566,7 @@ Consequences:
 - **Not confirmed, and this decides the case.** I found nothing on an official page that says an app may, or may not, download the owner's video file from
   `media_url` to analyse it. Meta's general [Platform Terms](https://developers.facebook.com/terms) require deleting platform data when it is no longer needed,
   when the person asks, or when Meta requests it, and forbid selling it, re-identifying it and surveillance uses. They say nothing specific about video analysis.
-- **So the case that applies is the cautious one: the Instagram path works from metrics only, and never fetches the file.** A configuration flag
-  (`INSTAGRAM_FETCH_MEDIA`, off) is the only way it would, and it is not to be turned on until you have read the terms (or Meta's reviewer says yes) and decided.
+- **So the case that applies is the cautious one: the Instagram path works from metrics only, and never fetches the file.** There is no code path in Lypcut that downloads a video from Instagram, so there is no setting to turn on by mistake; if you decide the terms allow it, adding one is a separate piece of work.
   What that costs the profile is in the report to you (question 1).
 
 ### Rate limits
@@ -689,3 +688,49 @@ Consequences:
 - **The offline model** understands "match my style" in English, Hinglish and Hindi, "captions/Reels in my style", "like my best Reels" and "my caption style". Its old
   answer, that matching a style "comes later", is gone.
 - **The evaluation** has 14 new golden prompts (69 in all), with and without a profile, checking the tool, the outcome and, with no profile, the link to the Style page.
+
+## Phase 3, step 6: the Instagram connection
+
+- **Everything Meta-specific is in one place** (`src/style/instagram/`): `InstagramClient` (the interface), `RealInstagramClient`, `FakeInstagramClient`. Failures leave the client as an
+  `InstagramError` of five kinds (`auth`, `rate_limited`, `unavailable`, `bad_request`) holding no URL, token, code or Meta message. The client is chosen by environment: the real one
+  when `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` and `INSTAGRAM_REDIRECT_URI` are all set; otherwise the stand-in outside production; and in production without them, none, so
+  Instagram is not offered and manual upload still works (`POST /style/connect` is `501` with a message saying so).
+- **The stand-in** is a fixed account with 14 Reels and steady, different numbers, plus a consent page served by this API (Creator, Business, personal, cancel), so
+  `docker compose up` runs the whole connect flow with no Meta app. Tests steer it (revoke a token, fail or rate-limit a call).
+- **What is unconfirmed, and where it is handled** (from Step 1). Each is one place in `real.ts`, with a test:
+  - _How a personal account shows up._ `account_type` other than `BUSINESS` or `MEDIA_CREATOR`, or missing, is "not professional". An error redirect from Instagram is "denied".
+  - _Whether a media is a Reel._ Ask with `media_product_type`; if Instagram refuses the field, ask without it and treat each video as a possible Reel; a media with no Reels metrics
+    (both metric lists refused) is not a Reel and is skipped.
+  - _Which metrics exist._ All eight are asked for; if refused, the long-standing six; if refused again, it is not a Reel.
+  - _**Correction to Step 1:** the unit of `ig_reels_avg_watch_time`._ Step 1 said seconds. I could not confirm that on a page I could read, and my recollection is that Meta reports
+    **milliseconds**. The client converts from milliseconds, in one constant (`AVG_WATCH_TIME_IS_MILLISECONDS`), tested. It is stored but not yet used for scoring (an Instagram Reel has no
+    length in the API, so no percentage can be worked out), so a wrong unit would show only as a wrong number in the database until a live account is checked.
+  - _The scale of `reels_skip_rate`._ A fraction is kept; a value above 1 is taken as a percentage.
+  - _Rate limits._ Calls are made one at a time with a pause (`STYLE_IG_CALL_INTERVAL_MS`, 300 ms), a rate-limit answer is waited out (up to four tries, then the job is retried by the queue), a
+    brief outage is retried with backoff, and the usage headers are read: above 80% of any limit the sync adds a pause of its own.
+- **The sign-in.** A `state` of 32 random bytes; only its SHA-256 is stored, with the person, a 10 minute expiry, and a `used_at` set in the same statement that checks it, so two callbacks
+  cannot both use it. At most five are open at once. The callback checks the state **before** asking Instagram anything, refuses a browser logged in as someone other than whoever started
+  it, and always answers with a redirect to the front end's Style page at `APP_URL` (default: the first CORS origin), with a `reason`. The redirect address, like the Instagram
+  redirect URI, is configuration and nothing in a request can change it.
+- **Account type is checked before anything is stored.** A personal account stores nothing, queues nothing and spends the state. Connecting a _different_ Instagram account removes the old one's
+  Reels; connecting the same one again replaces the token and clears "connect again".
+- **Tokens.** Sealed with the vault, for the person, on the way in; opened only by the sync and refresh jobs and the callback. No response contains one, no log does (the callback's code and
+  state included), and a test asserts both. Request logs now hold the path only, never the query string (which on the callback is the one-time code and the state, and elsewhere what people searched for).
+- **Sync** reads the newest `STYLE_MAX_REELS` (30) Reels, stores each once (date as its label, never its caption), and appends a reading of its numbers, with when it was read: running it twice never
+  duplicates a Reel, and a reading is not repeated within ten minutes. Reels no longer in the newest few, or gone from Instagram, are removed. No video is fetched: the code has no way to.
+  A token that stops working marks the account `reauth_required` and stops, with what was read before still shown; the editor is never affected.
+- **An Instagram-only profile is empty, by design, and the status says why.** Instagram's API gives numbers but no video (and no Reel length), so there is nothing to measure a cut pace or caption
+  look from. `GET /style/status` has `needs: "reel_files"` when Instagram is connected and no uploaded Reel has been analysed. This is the hybrid path from Step 1: Instagram says which Reels did best,
+  and the person uploads their files. Instagram Reels are ranked with the uploaded ones in `GET /style/reels`.
+- **Tokens are kept alive** by a daily check that queues a refresh for any token within ten days of its end (Instagram renews a token that is at least a day old and not expired) and marks one that has
+  already expired. Refused or expired means `reauth_required`; a brief outage only pauses.
+- **Weekly sync** is a daily check that queues a sync for every active account not read for six days, so a worker that was down a day still catches up; one at a time per person.
+- **Manual sync** is once an hour per person (`STYLE_SYNC_COOLDOWN_SEC`), answers `202` with the job, and answers with the running one instead of starting another.
+- **Meta's deletion callback.** A form with a `signed_request`; the signature is HMAC-SHA256 with the app secret, compared in constant time, the algorithm must be `HMAC-SHA256`, the account id digits
+  only. Anything else is `403` with one fixed message and nothing happens. Verified, it removes the connection and the Reels read from Instagram (with their numbers) for every Lypcut account connected to
+  that Instagram account, and rebuilds the profile from what remains; the person's uploaded Reels are their own files and stay. The confirmation code is a finished job row's id; the status address answers only
+  for such rows. **The request format is from community reports and Meta's signed-request documentation, not from Meta's page for this callback, which I could not read; check it against that page.** In development
+  with no Meta app it uses a published development secret so the callback can be tried; production without a secret answers `501`.
+- **Privacy policy.** Served at `/api/privacy` as a plain page from the outline in `docs/meta-review.md`. The legal entity's name and a contact come from settings; until the contact is set the page shows a
+  visible `[set PRIVACY_CONTACT_EMAIL]`. It needs a lawyer's review and the entity's address before it goes to Meta.
+- **The Instagram API version** is a setting (`INSTAGRAM_API_VERSION`, default `v26.0`, the version in Meta's own current example).

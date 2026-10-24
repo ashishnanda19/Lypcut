@@ -11,7 +11,9 @@ import {
   styleProfiles,
 } from '../../db/schema/index.js'
 import { activeUploads } from '../../lib/deletion.js'
-import { err } from '../../lib/errors.js'
+import { engagementScores } from '../../style/analysis/engagement.js'
+import { InstagramOAuth, requireInstagram } from '../../style/instagram/oauth.js'
+import { AppError, err } from '../../lib/errors.js'
 import { UUID_RE } from '../../lib/ids.js'
 import type { Log } from '../../lib/log.js'
 import { stylePrefix } from '../../lib/storage-keys.js'
@@ -112,6 +114,10 @@ export class StyleService {
       new Map(rows.map((r) => [r.reel.id, r.reel.durationSec ?? r.analysis?.durationSec ?? null])),
       new Map(rows.map((r) => [r.reel.id, r.reel.postedAt])),
     )
+    // Scored against each other here, so a Reel known only by its Instagram numbers is ranked too.
+    const scores = engagementScores(
+      rows.map((r) => ({ id: r.reel.id, numbers: nums.get(r.reel.id)?.numbers ?? null })),
+    )
     const ttlSec = this.deps.config.PRESIGN_GET_TTL_SEC
     const out = await Promise.all(
       rows.map(async ({ reel, analysis, thumbKey }): Promise<ReelMetricDto> => {
@@ -131,7 +137,7 @@ export class StyleService {
           avgWatchPct: n?.avgWatchPct == null ? null : Math.round(n.avgWatchPct * 10) / 10,
           durationSec: reel.durationSec ?? analysis?.durationSec ?? 0,
           postedAt: (reel.postedAt ?? reel.createdAt).toISOString(),
-          engagement: analysis?.engagementScore ?? null,
+          engagement: scores.get(reel.id)?.score ?? null,
           source: reel.source,
         }
       }),
@@ -228,6 +234,7 @@ export class StyleService {
       reels: reelsSummary,
       failed,
       updatedAt: (profile?.updatedAt ?? latest?.updatedAt)?.toISOString() ?? null,
+      needs: account && !profile ? 'reel_files' : null,
     }
   }
 
@@ -337,6 +344,76 @@ export class StyleService {
       ),
     )
     return this.profile(userId)
+  }
+
+  /* ------------------------------- Instagram ------------------------------- */
+
+  /** Starts connecting Instagram: where to send the person, and what to tell them first. */
+  async startConnect(userId: string) {
+    return new InstagramOAuth(this.deps, this.log, requireInstagram(this.deps)).start(userId)
+  }
+
+  /**
+   * A manual refresh from Instagram. Once an hour per person: more than that is `429` with how long to wait. Asking while one is
+   * already running answers with that one.
+   */
+  async triggerSync(userId: string): Promise<{ jobId: string }> {
+    requireInstagram(this.deps)
+    const [account] = await this.db
+      .select()
+      .from(instagramAccounts)
+      .where(eq(instagramAccounts.userId, userId))
+    if (!account) throw err.conflict('CONFLICT', 'Connect Instagram first.')
+    if (account.status === 'reauth_required')
+      throw err.conflict(
+        'CONFLICT',
+        'Your Instagram connection has expired. Connect again to refresh.',
+      )
+    const recent = await this.db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.userId, userId), eq(jobs.type, 'style_sync')))
+      .orderBy(desc(jobs.createdAt))
+      .limit(5)
+    const active = recent.find((j) => j.status === 'queued' || j.status === 'running')
+    if (active) return { jobId: active.id }
+    const cooldown = this.deps.config.STYLE_SYNC_COOLDOWN_SEC * 1000
+    const last = recent[0]
+    if (last && Date.now() - last.createdAt.getTime() < cooldown) {
+      const retryAfterSec = Math.ceil((cooldown - (Date.now() - last.createdAt.getTime())) / 1000)
+      throw new AppError(429, 'RATE_LIMITED', 'You can refresh from Instagram once an hour.', {
+        retryAfterSec,
+      })
+    }
+    const [job] = await this.db
+      .insert(jobs)
+      .values({ userId, type: 'style_sync', detail: 'Reading your Reels' })
+      .returning()
+    await enqueueJob(this.deps.queues, job!).catch((e) =>
+      this.log.error({ err: e, jobId: job!.id }, 'could not enqueue a sync; the sweep will retry'),
+    )
+    return { jobId: job!.id }
+  }
+
+  /**
+   * Meta's data-deletion request for an Instagram account: removes the connection (and with it the token), every Reel read from
+   * Instagram with its numbers, and works the profile out again without them. Uploaded Reels are the person's own files, not
+   * Instagram's data, and stay. Returns how many people it applied to; no one's id is in the answer.
+   */
+  async deleteInstagramData(igUserId: string): Promise<{ matched: number }> {
+    const accounts = await this.db
+      .select()
+      .from(instagramAccounts)
+      .where(eq(instagramAccounts.igUserId, igUserId))
+    for (const a of accounts) {
+      await this.db.transaction(async (tx) => {
+        // Deleting the account deletes its Reels, and theirs the numbers and analysis, through the foreign keys.
+        await tx.delete(instagramAccounts).where(eq(instagramAccounts.id, a.id))
+        await tx.delete(oauthStates).where(eq(oauthStates.userId, a.userId))
+      })
+      await this.analysis().rebuildProfile(a.userId)
+    }
+    return { matched: accounts.length }
   }
 
   /* ----------------------------- disconnecting ----------------------------- */

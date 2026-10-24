@@ -73,6 +73,11 @@ export const styleStatusSchema = z.object({
     z.object({ id: z.string(), label: z.string(), code: z.string(), message: z.string() }),
   ),
   updatedAt: z.string().nullable(),
+  /**
+   * What the style still needs from the person. `reel_files`: Instagram is connected and its numbers are read, but a style is learned from
+   * the videos themselves, so the person has to upload the files of their best Reels.
+   */
+  needs: z.enum(['reel_files']).nullable(),
 })
 export type StyleStatusDto = z.infer<typeof styleStatusSchema>
 
@@ -101,4 +106,28 @@ export const submitUploadBody = z.object({
   count: z.number().int().min(1).max(10),
   /** Their numbers, if they typed or pasted them. A Reel without numbers is still learned from, for its style. */
   metrics: z.array(reelNumbersSchema).max(10).optional(),
+})
+
+export const connectResponseSchema = z.object({
+  /** Where to send the person to approve. Leave the app, go there, and Instagram sends them back to the Style page. */
+  authUrl: z.string(),
+  /** What to tell them before they go: what is read, what it is used for, what is never done. */
+  consent: z.object({
+    reads: z.array(z.string()),
+    uses: z.string(),
+    never: z.array(z.string()),
+    disconnect: z.string(),
+  }),
+  /** The permissions that will be asked for: read-only. */
+  scopes: z.array(z.string()),
+})
+
+export const syncResponseSchema = z.object({ jobId: z.string() })
+
+export const callbackQuery = z.object({
+  code: z.string().max(2048).optional(),
+  state: z.string().max(256).optional(),
+  error: z.string().max(100).optional(),
+  error_reason: z.string().max(100).optional(),
+  error_description: z.string().max(500).optional(),
 })

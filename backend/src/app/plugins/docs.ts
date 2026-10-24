@@ -70,6 +70,18 @@ export const ROUTE_SUMMARIES: Record<string, string> = {
   'POST /api/style/upload':
     'Learn from the Reels that have finished uploading, with their numbers if given.',
   'DELETE /api/style/reels/:id': 'Remove one Reel and work the profile out again.',
+  'POST /api/style/connect':
+    'Start connecting Instagram: where to send the person, and what to tell them first.',
+  'GET /api/style/callback':
+    'Where Instagram sends the browser back; protected by the single-use state. Redirects to the Style page.',
+  'POST /api/style/sync': 'Read the connected Instagram again (once an hour).',
+  'GET /api/style/fake-instagram/authorize':
+    'Development only: stands in for Instagram’s consent screen when no Meta app is set up.',
+  'GET /api/privacy': 'The public privacy policy Meta requires.',
+  'POST /api/privacy/instagram/deletion':
+    'Meta’s data-deletion callback: verifies the signed request and deletes that account’s Instagram data.',
+  'GET /api/privacy/instagram/deletion':
+    'The status address Meta shows for a deletion confirmation code.',
   'DELETE /api/style/connect':
     'Remove everything Style holds: Reels, numbers, analysis, profile and files.',
 
@@ -84,7 +96,7 @@ const tagOf = (url: string): string => {
   if (url.startsWith('/api/me')) return 'Account'
   if (url.startsWith('/api/uploads')) return 'Uploads'
   if (url.startsWith('/api/jobs')) return 'Jobs'
-  if (url.startsWith('/api/style')) return 'Style'
+  if (url.startsWith('/api/style') || url.startsWith('/api/privacy')) return 'Style'
   if (url.includes('/assistant') || url.includes('/plans')) return 'Assistant'
   if (url.includes('/timeline') || url.includes('/export/')) return 'Timeline'
   if (url.endsWith('/search')) return 'Search'

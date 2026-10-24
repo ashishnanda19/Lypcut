@@ -26,6 +26,12 @@ x-app-env: &app-env
   EMBEDDING_MODEL_DIR: /models/embeddings
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+  # Instagram (Style). Leave empty and the built-in stand-in is used, so everything runs with no Meta app.
+  INSTAGRAM_CLIENT: ${INSTAGRAM_CLIENT:-auto}
+  INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
+  INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
+  INSTAGRAM_REDIRECT_URI: ${INSTAGRAM_REDIRECT_URI:-}
+  APP_URL: ${APP_URL:-http://localhost:5173}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
   # What the browser uses for presigned URLs (the host-mapped MinIO port).

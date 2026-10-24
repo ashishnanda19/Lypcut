@@ -120,4 +120,78 @@ describe('loadConfig', () => {
       ).toEqual([old])
     })
   })
+
+  describe('Instagram', () => {
+    const three = {
+      INSTAGRAM_APP_ID: 'id',
+      INSTAGRAM_APP_SECRET: 'secret',
+      INSTAGRAM_REDIRECT_URI: 'https://api.example.com/api/style/callback',
+    }
+
+    it('is optional: nothing set is fine, with the stand-in in use outside production', () => {
+      const c = loadConfig(base)
+      expect(c.INSTAGRAM_CLIENT).toBe('auto')
+      expect(c.INSTAGRAM_APP_ID).toBeUndefined()
+      expect(c.STYLE_MAX_REELS).toBe(30)
+      expect(c.STYLE_SYNC_COOLDOWN_SEC).toBe(3600)
+      expect(c.INSTAGRAM_API_VERSION).toBe('v26.0')
+      expect(
+        loadConfig({
+          ...base,
+          INSTAGRAM_APP_ID: '',
+          INSTAGRAM_APP_SECRET: '',
+          INSTAGRAM_REDIRECT_URI: '',
+        }).INSTAGRAM_APP_ID,
+      ).toBeUndefined()
+    })
+
+    it('needs the app id, the secret and the redirect address together, or none', () => {
+      expect(() => loadConfig({ ...base, ...three })).not.toThrow()
+      expect(() => loadConfig({ ...base, INSTAGRAM_APP_ID: 'id' })).toThrow(/must be set together/)
+      expect(() =>
+        loadConfig({ ...base, INSTAGRAM_APP_ID: 'id', INSTAGRAM_APP_SECRET: 's' }),
+      ).toThrow(/must be set together/)
+      expect(() => loadConfig({ ...base, INSTAGRAM_CLIENT: 'real' })).toThrow(
+        /INSTAGRAM_CLIENT=real needs/,
+      )
+      expect(() => loadConfig({ ...base, ...three, INSTAGRAM_CLIENT: 'real' })).not.toThrow()
+    })
+
+    it('refuses a redirect address that is not an address, and in production one that is not https', () => {
+      expect(() => loadConfig({ ...base, ...three, INSTAGRAM_REDIRECT_URI: 'not a url' })).toThrow()
+      const prod = {
+        ...base,
+        ...three,
+        NODE_ENV: 'production',
+        AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc',
+        TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+      }
+      expect(() => loadConfig(prod)).not.toThrow()
+      expect(() =>
+        loadConfig({ ...prod, INSTAGRAM_REDIRECT_URI: 'http://api.example.com/cb' }),
+      ).toThrow(/https/)
+    })
+
+    it('does not allow the stand-in in production', () => {
+      const prod = {
+        ...base,
+        NODE_ENV: 'production',
+        AUTH_ACCESS_SECRET: 'q7Zk2mV9xR4tLw8Hn3Yb6Pd1Gf5Sa0Jc',
+        TOKEN_ENCRYPTION_KEY: REAL_TOKEN_KEY,
+      }
+      expect(() => loadConfig({ ...prod, INSTAGRAM_CLIENT: 'fake' })).toThrow(/stand-in/)
+      expect(() => loadConfig(prod)).not.toThrow()
+      expect(() => loadConfig({ ...base, INSTAGRAM_CLIENT: 'fake' })).not.toThrow()
+    })
+
+    it('has limits that are numbers in range', () => {
+      expect(() => loadConfig({ ...base, STYLE_MAX_REELS: '0' })).toThrow()
+      expect(() => loadConfig({ ...base, STYLE_MAX_REELS: '500' })).toThrow()
+      expect(() => loadConfig({ ...base, INSTAGRAM_API_VERSION: '26' })).toThrow()
+      expect(
+        loadConfig({ ...base, STYLE_MAX_REELS: '10', STYLE_SYNC_COOLDOWN_SEC: '60' })
+          .STYLE_MAX_REELS,
+      ).toBe(10)
+    })
+  })
 })

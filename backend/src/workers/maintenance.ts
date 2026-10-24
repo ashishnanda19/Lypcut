@@ -5,6 +5,7 @@ import type { AppDeps } from '../app/types.js'
 import { jobs, sessions } from '../db/schema/index.js'
 import { z } from 'zod'
 import { sweepUploads } from '../modules/uploads/cleanup.js'
+import { scheduleRefreshes, scheduleSyncs } from '../style/jobs/schedule.js'
 import { enqueueJob } from '../queue/enqueue.js'
 import { bullConnectionOptions, createRedis } from '../queue/connection.js'
 import { QUEUES, type JobData } from '../queue/queues.js'
@@ -18,6 +19,7 @@ export interface WorkerContext {
 const RECONCILE_AFTER_MS = 60_000
 const RECONCILE_EVERY_MS = 60_000
 const CLEANUP_EVERY_MS = 15 * 60_000
+const DAY_MS = 24 * 3600_000
 
 async function markJob(ctx: WorkerContext, id: string, patch: Partial<typeof jobs.$inferInsert>) {
   await ctx.deps.database.db.update(jobs).set(patch).where(eq(jobs.id, id))
@@ -89,6 +91,8 @@ export async function purgeExpiredSessions(ctx: WorkerContext): Promise<number> 
 
 export async function processMaintenanceJob(ctx: WorkerContext, bull: BullJob<JobData>) {
   if (bull.name === 'cleanup-uploads') return { ...(await sweepUploads(ctx.deps, ctx.log)) }
+  if (bull.name === 'style-weekly') return { queued: await scheduleSyncs(ctx.deps, ctx.log) }
+  if (bull.name === 'style-refresh') return { ...(await scheduleRefreshes(ctx.deps, ctx.log)) }
   if (bull.name === 'reconcile') {
     return {
       requeued: await reconcileQueuedJobs(ctx),
@@ -141,7 +145,10 @@ export function createMaintenanceWorker(ctx: WorkerContext): Worker<JobData> {
       'job failed',
     )
     // Out of retries: record it. BullMQ keeps the failed job (the dead-letter path).
-    if (exhausted && bull.name !== 'reconcile' && bull.name !== 'cleanup-uploads') {
+    if (
+      exhausted &&
+      !['reconcile', 'cleanup-uploads', 'style-weekly', 'style-refresh'].includes(bull.name)
+    ) {
       void markJob(ctx, bull.data.jobId, {
         status: 'failed',
         error: e.message,
@@ -159,6 +166,17 @@ export async function scheduleMaintenance(ctx: WorkerContext): Promise<void> {
     'reconcile',
     { every: RECONCILE_EVERY_MS },
     { name: 'reconcile', data: { jobId: 'reconcile' } },
+  )
+  // Instagram: read each connected account about weekly, and keep its token alive. Both only queue work, daily.
+  await maintenance.upsertJobScheduler(
+    'style-weekly',
+    { every: DAY_MS },
+    { name: 'style-weekly', data: { jobId: 'style-weekly' } },
+  )
+  await maintenance.upsertJobScheduler(
+    'style-refresh',
+    { every: DAY_MS },
+    { name: 'style-refresh', data: { jobId: 'style-refresh' } },
   )
   await maintenance.upsertJobScheduler(
     'cleanup-uploads',

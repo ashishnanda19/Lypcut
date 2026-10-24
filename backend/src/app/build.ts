@@ -13,6 +13,7 @@ import { contentRoutes } from '../modules/content/routes.js'
 import { jobRoutes } from '../modules/jobs/routes.js'
 import { projectRoutes } from '../modules/projects/routes.js'
 import { assistantRoutes } from '../modules/assistant/routes.js'
+import { privacyRoutes } from '../modules/privacy/routes.js'
 import { styleRoutes } from '../modules/style/routes.js'
 import { searchRoutes } from '../modules/search/routes.js'
 import { timelineRoutes } from '../modules/timeline/routes.js'
@@ -76,6 +77,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register(searchRoutes)
       await api.register(assistantRoutes)
       await api.register(styleRoutes)
+      await api.register(privacyRoutes)
       await api.register(jobRoutes)
       // More modules mount here as each step lands.
     },

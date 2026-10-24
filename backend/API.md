@@ -942,11 +942,12 @@ marked down for small numbers; it is `null` without enough numbers to score. `th
   "progress": 40,
   "reels": { "total": 3, "analysed": 1, "analysing": 2, "pending": 0, "failed": 0 },
   "failed": [],
-  "updatedAt": "2026-10-25T09:12:41.100Z"
+  "updatedAt": "2026-10-25T09:12:41.100Z",
+  "needs": null
 }
 ```
 
-`state` is `idle`, `analysing`, `ready` or `failed` (and, with Instagram, `syncing` and `reauth_required`). Poll it after `POST /style/upload` until it is `ready`,
+`state` is `idle`, `analysing`, `syncing` (reading Instagram), `ready`, `failed`, or `reauth_required` (the Instagram connection has expired: show Reconnect). `needs` is `"reel_files"` when Instagram is connected and its numbers read, but no video has been uploaded to learn the style from: a style comes from the videos themselves, so the page asks for the files of their best Reels. Poll it after `POST /style/upload` until it is `ready`,
 then read `GET /style`. `failed` lists Reels that could not be analysed, each with a `code` and a `message` the person can act on (`too_long`,
 `unreadable`, `no_video`, `transcription_failed`); the rest are still learned from.
 
@@ -965,6 +966,86 @@ entries for one Reel is `422`, and nothing is stored.
 
 The answer is the profile as it is now, which for a first upload is the empty one. The learning runs in the background; follow it with `GET /style/status`.
 Once a Reel has been analysed its video is deleted: only the numbers and a thumbnail are kept.
+
+### POST /style/connect
+
+Starts connecting Instagram (through Meta's official Instagram API with Instagram Login, read-only). The page shows `consent`, then sends the person
+to `authUrl`, where they approve on Instagram's own screen.
+
+```json
+{
+  "authUrl": "https://www.instagram.com/oauth/authorize?client_id=…&redirect_uri=…&response_type=code&scope=instagram_business_basic,instagram_business_manage_insights&state=…",
+  "consent": {
+    "reads": [
+      "Your Reels: when they were posted, and how long ago.",
+      "Their numbers: views, likes, comments, saves, shares and watch time.",
+      "Your handle, to show which account is connected."
+    ],
+    "uses": "Lypcut works out which of your Reels did best and learns your style from them: …",
+    "never": ["Post, comment, message or change anything on your Instagram.", "…"],
+    "disconnect": "You can disconnect at any time on the Style page. …"
+  },
+  "scopes": ["instagram_business_basic", "instagram_business_manage_insights"]
+}
+```
+
+The `state` in `authUrl` is random, belongs to this person, works once and lasts ten minutes; only its hash is stored. `501` when Instagram is not set up on the
+server (production without a Meta app): the Style page offers manual upload only. Without a Meta app outside production, `authUrl` points at a stand-in
+consent screen served by this API (below), so the whole flow can be tried.
+
+### GET /style/callback
+
+Where Instagram sends the browser back, with `code` and `state` (or `error` if the person cancelled). **Public**: the browser arrives from another site, so
+there is no login to check; the single-use `state` is what ties it to the person, and a browser logged in as someone else is refused. Nothing is asked of Instagram until
+the state has been checked and spent. It always answers `302` to the Style page, at the address in `APP_URL` (nothing in the request can change it):
+
+| Redirect to `…/app/style?…`                   | Meaning                                                                                                           |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `connected=1`                                 | Connected. The first read of their Reels is queued.                                                               |
+| `connected=0&reason=not_professional_account` | A personal account. Nothing is stored. The page says "Switch to a Creator account, it is free" and offers upload. |
+| `connected=0&reason=denied`                   | They cancelled on Instagram.                                                                                      |
+| `connected=0&reason=permission_denied`        | They approved fewer permissions than the two reads.                                                               |
+| `connected=0&reason=invalid_state`            | No state, a wrong, used or expired one, or someone else's. Nothing was done.                                      |
+| `connected=0&reason=exchange_failed`          | Instagram refused the code.                                                                                       |
+| `connected=0&reason=unavailable`              | Instagram could not be reached or is rate-limiting.                                                               |
+
+Tokens, codes and states are never returned, and never logged (request logs hold the path only).
+
+### POST /style/sync
+
+Reads the connected Instagram again: `202 { "jobId": "…" }`. Once an hour per person: more than that is `429 RATE_LIMITED` with `Retry-After` and `details.retryAfterSec`.
+Asking while one is running answers with that one. `409 CONFLICT` with no connected account, or when it has expired and they must connect again. Every connected account is also
+read about weekly, and its token renewed well before its 60 days end; if Instagram stops accepting it, `GET /style/status` says `reauth_required` and the last good profile stays.
+
+### GET /style/fake-instagram/authorize
+
+Development only, and only when no Meta app is set up: a page standing in for Instagram's consent screen, with links to continue as a Creator, a Business or a personal
+account, or to cancel. Absent in production.
+
+### GET /privacy
+
+The public privacy policy Meta requires, as a web page: what is read (and only after approval), what is not, why, where it goes, how long it is kept, and how to remove it.
+The name and contact come from `LEGAL_ENTITY_NAME` and `PRIVACY_CONTACT_EMAIL`.
+
+### POST /privacy/instagram/deletion
+
+Meta's data-deletion callback. A form with one field, `signed_request` (`<signature>.<payload>`, HMAC-SHA256 with the app secret, compared in constant time). A request that is
+not exactly that is `403` and nothing happens. Otherwise it removes, for every Lypcut account connected to that Instagram account, the connection (and so the token), every Reel read from
+Instagram with its numbers, and pending sign-ins, then works the profile out again from what is left (the person's own uploaded Reels are theirs, not Instagram's). Instagram data is never
+stored as files, so there is nothing in storage to remove.
+
+```json
+{
+  "url": "https://api.example.com/api/privacy/instagram/deletion?code=01a17022-…",
+  "confirmation_code": "01a17022-…"
+}
+```
+
+An account Lypcut has never heard of also gets a code. Safe to repeat.
+
+### GET /privacy/instagram/deletion
+
+`?code=<confirmation_code>` answers `{ "status": "completed" }`, or `404 { "status": "unknown" }` for anything that is not a code this callback gave out.
 
 ### DELETE /style/reels/{id}
 
