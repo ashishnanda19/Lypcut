@@ -9,6 +9,10 @@ import type { TranscriptionProvider } from '../transcription/types.js'
 import type { WorkerContext } from './maintenance.js'
 
 const analysisPayload = z.object({ reelIds: z.array(z.string()).optional() })
+const deletionPayload = z.object({
+  prefix: z.string(),
+  uploads: z.array(z.object({ key: z.string(), uploadId: z.string() })).default([]),
+})
 
 async function mark(ctx: WorkerContext, id: string, patch: Partial<typeof jobs.$inferInsert>) {
   await ctx.deps.database.db.update(jobs).set(patch).where(eq(jobs.id, id))
@@ -25,7 +29,9 @@ export async function processStyleJob(
   bull: Pick<BullJob<JobData>, 'data' | 'attemptsMade'>,
 ): Promise<Record<string, unknown> | null> {
   const [row] = await ctx.deps.database.db.select().from(jobs).where(eq(jobs.id, bull.data.jobId))
-  if (!row || row.status === 'done' || !row.userId) return null
+  if (!row || row.status === 'done') return null
+  // Deleting someone's style data has to work even after their account is gone; everything else belongs to a person.
+  if (!row.userId && row.type !== 'style_deletion') return null
 
   await mark(ctx, row.id, {
     status: 'running',
@@ -41,8 +47,9 @@ export async function processStyleJob(
       const { reelIds } = analysisPayload.parse(row.payload)
       const analysis = new StyleAnalysis(ctx.deps, ctx.log, provider)
       let last = 0
-      const r = await analysis.analyse(row.userId, {
+      const r = await analysis.analyse(row.userId!, {
         reelIds,
+        deleteSources: true,
         onProgress: (done, total) => {
           const progress = Math.min(95, Math.round((done / Math.max(1, total)) * 95))
           if (progress !== last) {
@@ -53,6 +60,21 @@ export async function processStyleJob(
       })
       ctx.log.info({ jobId: row.id, ...r }, 'style analysis finished')
       result = { ...r }
+      break
+    }
+    case 'style_deletion': {
+      const { prefix, uploads } = deletionPayload.parse(row.payload)
+      // Only ever a person's style folder: never anything broader.
+      if (!/^users\/[0-9a-f-]{36}\/style\/$/.test(prefix))
+        throw new Error(`refusing to delete unexpected prefix: ${prefix}`)
+      for (const u of uploads)
+        await ctx.deps.storage.abortMultipart(u.key, u.uploadId).catch(() => undefined)
+      const removed = await ctx.deps.storage.deletePrefix(prefix)
+      ctx.log.info(
+        { jobId: row.id, removed, abortedUploads: uploads.length },
+        'style data deleted from storage',
+      )
+      result = { removed, abortedUploads: uploads.length }
       break
     }
     default:

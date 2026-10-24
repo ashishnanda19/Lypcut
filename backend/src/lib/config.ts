@@ -186,6 +186,12 @@ export const envSchema = z
     TOKEN_ENCRYPTION_OLD_KEYS: csv.default([]),
 
     /** Style analysis jobs at once. Lower than editing work, so learning a style never slows someone's edit. */
+    /** Largest file accepted as a style Reel. A 90 second phone video is well under this. */
+    STYLE_MAX_REEL_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_000_000)
+      .default(300 * 1024 * 1024),
     STYLE_CONCURRENCY: z.coerce.number().int().min(1).default(1),
 
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),

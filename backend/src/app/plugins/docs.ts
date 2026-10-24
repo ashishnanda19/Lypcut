@@ -61,6 +61,18 @@ export const ROUTE_SUMMARIES: Record<string, string> = {
   'POST /api/projects/:id/plans/:planId/apply': 'Apply a plan as an assistant-authored version.',
   'GET /api/me/usage': 'The plan and how much of today’s assistant allowance is used.',
 
+  'GET /api/style':
+    'The style profile learned from the person’s best Reels (always one; connected: false when none).',
+  'GET /api/style/reels':
+    'The analysed Reels, best first, with their numbers and engagement score.',
+  'GET /api/style/status':
+    'Where style learning is: idle, analysing, ready or failed, with progress.',
+  'POST /api/style/upload':
+    'Learn from the Reels that have finished uploading, with their numbers if given.',
+  'DELETE /api/style/reels/:id': 'Remove one Reel and work the profile out again.',
+  'DELETE /api/style/connect':
+    'Remove everything Style holds: Reels, numbers, analysis, profile and files.',
+
   'GET /api/jobs/:id': 'Where a processing job stands (the polling fallback of the live feed).',
   'POST /api/jobs/:id/retry': 'Resume a failed processing job where it stopped.',
 }
@@ -72,6 +84,7 @@ const tagOf = (url: string): string => {
   if (url.startsWith('/api/me')) return 'Account'
   if (url.startsWith('/api/uploads')) return 'Uploads'
   if (url.startsWith('/api/jobs')) return 'Jobs'
+  if (url.startsWith('/api/style')) return 'Style'
   if (url.includes('/assistant') || url.includes('/plans')) return 'Assistant'
   if (url.includes('/timeline') || url.includes('/export/')) return 'Timeline'
   if (url.endsWith('/search')) return 'Search'
@@ -97,6 +110,7 @@ export async function registerDocs(app: FastifyInstance): Promise<void> {
         { name: 'Uploads' },
         { name: 'Timeline' },
         { name: 'Assistant' },
+        { name: 'Style' },
         { name: 'Content' },
         { name: 'Search' },
         { name: 'Jobs' },

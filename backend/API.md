@@ -8,7 +8,7 @@ Examples use `$A` for `http://localhost:4000/api` and shorten ids and tokens. Th
 
 - [Conventions](#conventions)
 - [Health](#health) · [Auth](#auth) · [Account](#account) · [Projects](#projects) · [Uploads](#uploads)
-- [Jobs](#jobs) · [Timeline](#timeline) · [Content](#content) · [Search](#search) · [Assistant](#assistant)
+- [Jobs](#jobs) · [Timeline](#timeline) · [Content](#content) · [Search](#search) · [Assistant](#assistant) · [Style](#style)
 - [Errors](#error-codes)
 
 ## Conventions
@@ -281,6 +281,9 @@ curl -X POST $A/uploads -H "$H" -H 'content-type: application/json' \
   }
 }
 ```
+
+A Reel that teaches the assistant your style uses the same upload with no project: send `"purpose": "style_reel"` instead of
+`projectId` (exactly one of the two). `upload.projectId` is then `null`. See [Style](#style).
 
 Every part except the last is exactly `partSize` bytes. Plan limits are checked here: `403 LIMIT_VIDEO_LENGTH`
 (`details.maxSeconds`, `details.durationSec`) and `403 LIMIT_MONTHLY_UPLOADS` (`details.max`). Free is 10 minutes
@@ -843,6 +846,127 @@ it took, and only when a real model was asked: requests the service failed, requ
 At the limit, `messages` and `answers` answer `429 RATE_LIMITED` with a `Retry-After` header and `details`
 (`limit`, `used`, `retryAfterSec`, and `resetsAt` or `window: "minute"`). A burst limit (`PLANNER_BURST_PER_MINUTE`, default 10) applies as well.
 
+## Style
+
+Style teaches the assistant how a creator edits: how soon their best Reels start, how often they cut, which caption look they use, and
+the fonts and colours. It is learned from the creator's **best** Reels (the best third by engagement, at least three), by
+measurement: timing, cut pace, speech rate and caption look come from the video itself, and a model only labels captions the rules
+could not place and writes one sentence. A profile holds numbers and style ids; it never holds anyone's content.
+
+Reels get in by **manual upload** (this section) or, later, from Instagram. Both fill the same tables.
+
+The videos go through the ordinary resumable upload, `POST /uploads` with `"purpose": "style_reel"` and no project, then
+`/uploads/{id}/parts` and `/uploads/{id}/complete`. Finishing one answers `{ upload, reel: { id, label, durationSec } }`. A Reel can be at most
+90 seconds (checked from the file, not from what the browser says), a person can have 10, and they do not use the monthly project uploads.
+
+- `403 LIMIT_STYLE_REELS` (`details.max`): ten already; remove one with `DELETE /style/reels/{id}`.
+- `403 LIMIT_REEL_LENGTH` (`details.maxSeconds`, `details.durationSec`): over 90 seconds.
+
+A Reel that has been uploaded but not submitted is removed, with its video, after a day.
+
+### GET /style
+
+```bash
+curl $A/style -H "$H"
+```
+
+```json
+{
+  "connected": true,
+  "source": "upload",
+  "reelsAnalysed": 3,
+  "hookTimingSec": 1.5,
+  "cutPace": 2.4,
+  "captionStyles": [
+    { "id": "saffron-pop", "share": 0.9 },
+    { "id": "custom", "share": 0.1 }
+  ],
+  "music": [],
+  "hookRetention": [],
+  "fonts": ["Inter"],
+  "colors": ["#fda73a", "#ffffff"],
+  "confidence": "low",
+  "updatedAt": "2026-10-25T09:12:41.100Z",
+  "summary": "Your best Reels hook in under 2 seconds and cut every 4.2 seconds, with Saffron Pop captions."
+}
+```
+
+Always a profile. A person with none gets the same shape with `"connected": false`, `"source": null`, zeros and empty lists. `cutPace` is cuts per
+10 seconds. `captionStyles` shares add up to 1; an id is one of the editor's caption styles, or `custom` when captions were seen that match none.
+`music` is always empty: music is not learned. `hookRetention` is empty unless Instagram supplied it. `confidence` is `low` with fewer than three
+Reels or nothing to rank them by, `medium` with five Reels of which three have numbers, `high` with ten and eight. `summary` is absent when none
+could be written. `handle` is present for an Instagram connection.
+
+### GET /style/reels
+
+The person's analysed Reels, best engagement first, then those with no score, newest first.
+
+```json
+[
+  {
+    "id": "01a16f…",
+    "title": "best",
+    "thumbSeed": "01a16f…",
+    "thumbUrl": "https://…",
+    "views": 9000,
+    "likes": 800,
+    "comments": null,
+    "saves": 700,
+    "shares": 500,
+    "avgWatchPct": 80,
+    "durationSec": 12,
+    "postedAt": "2026-10-25T09:10:02.000Z",
+    "engagement": 100,
+    "source": "upload"
+  }
+]
+```
+
+A number that was not given is `null`, never 0. `engagement` (0-100) is the Reel's rank among this person's own Reels, so a small account is not
+marked down for small numbers; it is `null` without enough numbers to score. `thumbUrl` is a short-lived link to the Reel's picture.
+
+### GET /style/status
+
+```json
+{
+  "state": "analysing",
+  "progress": 40,
+  "reels": { "total": 3, "analysed": 1, "analysing": 2, "pending": 0, "failed": 0 },
+  "failed": [],
+  "updatedAt": "2026-10-25T09:12:41.100Z"
+}
+```
+
+`state` is `idle`, `analysing`, `ready` or `failed` (and, with Instagram, `syncing` and `reauth_required`). Poll it after `POST /style/upload` until it is `ready`,
+then read `GET /style`. `failed` lists Reels that could not be analysed, each with a `code` and a `message` the person can act on (`too_long`,
+`unreadable`, `no_video`, `transcription_failed`); the rest are still learned from.
+
+### POST /style/upload
+
+```bash
+curl -X POST $A/style/upload -H "$H" -H 'content-type: application/json' \
+  -d '{"count":3,"metrics":[{"reelId":"01a16f…","views":9000,"likes":800,"saves":700,"shares":500,"avgWatchPct":80},{"fileName":"second.mp4","views":8000}]}'
+```
+
+Starts learning from the Reels that have finished uploading. `count` (1-10) is how many the person means to use; if fewer have finished it is
+`409 CONFLICT` with `details.uploaded` and `details.expected`, and nothing starts. `metrics` is optional: each entry names a Reel by `reelId` (from the
+upload's `complete` answer) or by `fileName`, and gives any of `views`, `likes`, `comments`, `saves`, `shares` (whole numbers, 0 or more) and
+`avgWatchPct` (0-100). A Reel without numbers is still learned from, for its style. Anything else, a number for a Reel that is not theirs, or two
+entries for one Reel is `422`, and nothing is stored.
+
+The answer is the profile as it is now, which for a first upload is the empty one. The learning runs in the background; follow it with `GET /style/status`.
+Once a Reel has been analysed its video is deleted: only the numbers and a thumbnail are kept.
+
+### DELETE /style/reels/{id}
+
+Removes one Reel, its numbers and its picture, and works the profile out again. `404` for a Reel that is not theirs, the same answer as for one that does not exist.
+
+### DELETE /style/connect
+
+Removes everything Style holds for the person: the Instagram connection and its token, every Reel with its numbers and analysis, the profile, pending
+sign-ins, and the videos and pictures. The database rows are gone when it answers, with the empty profile; the files follow in a job that retries until
+storage is clean and logs when it is. Safe to call twice. A person's projects are not touched.
+
 ## Error codes
 
 | HTTP | `code`                  | Meaning                                                                                                                               |
@@ -852,6 +976,8 @@ At the limit, `messages` and `answers` answer `429 RATE_LIMITED` with a `Retry-A
 | 403  | `FORBIDDEN`             | Not allowed, or a browser write from an origin not in `CORS_ORIGINS`.                                                                 |
 | 403  | `LIMIT_VIDEO_LENGTH`    | Longer than the plan allows. `details.maxSeconds`, `details.durationSec`.                                                             |
 | 403  | `LIMIT_MONTHLY_UPLOADS` | Monthly uploads used up. `details.max`.                                                                                               |
+| 403  | `LIMIT_STYLE_REELS`     | Ten Reels for style learning already. `details.max`.                                                                                  |
+| 403  | `LIMIT_REEL_LENGTH`     | A style Reel is over 90 seconds. `details.maxSeconds`, `details.durationSec`.                                                         |
 | 404  | `NOT_FOUND`             | Does not exist, or belongs to someone else.                                                                                           |
 | 409  | `EMAIL_TAKEN`           | That email already has an account.                                                                                                    |
 | 409  | `VERSION_CONFLICT`      | The timeline changed since `baseVersion`. `details.currentVersion`, `lastVersion`.                                                    |

@@ -629,3 +629,35 @@ Consequences:
   otherwise there is no sentence, and the profile is complete without one. It is written again only when the figures change.
 - **Model input.** The captions call sends up to four small JPEG frames per Reel (360 px wide), for at most twelve Reels, and the names of the Reels' ids. It
   sends no handle, number, token or file name. The model answers from closed lists; anything else it says is dropped.
+
+## Phase 3, step 4: the manual upload path
+
+- **One upload, two purposes.** A style Reel uses the Phase 1 resumable upload (`POST /uploads`, `/parts`, `/complete`) with `purpose: "style_reel"` and no
+  project. The route, the checks (content by probe, size, checksum, resume) and the cleanup sweeps are shared; the differences are what it counts against
+  (ten Reels per person, not the monthly project uploads or video minutes), the length limit (90 seconds, measured from the file) and what it becomes
+  (a `style_reel` asset under `users/<id>/style/` and a `reels` row, never a project). `upload.projectId` is `null` for it.
+- **Registering and starting are separate.** Finishing an upload creates the Reel (`pending`). `POST /style/upload { count, metrics? }` then starts
+  analysis for the Reels waiting: it checks they have all finished (`409` with how many have, if not), attaches the numbers, and queues one job for the
+  batch, so the one model call per run covers them all. The answer is the profile as it is, which for a first upload is empty; the page follows
+  `GET /style/status`. A Reel nobody submits within a day is deleted with its video.
+- **Numbers.** Matched to a Reel by `reelId` or `fileName`; unknown fields, negative or fractional counts, a percentage over 100, a Reel that is not theirs
+  or two entries for one Reel are refused and nothing is stored. A Reel without numbers is learned from for its style; its engagement is `null`.
+- **The video is deleted after analysis**, success or not, as soon as the Reel reaches an end state (analysed, cached or unreadable); the thumbnail and the
+  numbers stay. A run that fails for a service reason keeps the file so the retry has something to read. The consequence: **an algorithm change cannot
+  re-measure an uploaded Reel**, because its file is gone. The stored numbers remain valid; the person re-uploads to refresh them.
+- **Status is derived, not stored.** `analysing` while a style job is queued or running; `failed` when no job is active but the last one failed or Reels are
+  stuck `analysing`; `ready` once there is a profile; otherwise `idle`. A Reel that could not be analysed is listed with a reason the person can act on and
+  does not stop the others.
+- **`GET /style` always answers.** Without a profile it is the same shape with `connected: false` and zeros. `connected` is true once there is a profile or an
+  Instagram account. The two server additions are `confidence`, `updatedAt` and `summary`; every field of the front end's `StyleProfile` is present.
+- **`GET /style/reels`** shows analysed Reels, best engagement first. A missing number is `null`, never 0, which changes the front end's `ReelMetric` from
+  numbers to nullable numbers (Step 7 lists the lines). `title` is the file name without its extension and `thumbUrl` a short-lived link; the front end's
+  placeholder (`thumbSeed`) is still sent for when there is no picture.
+- **`DELETE /style/reels/:id`** is not in the document's table, and is needed: with a limit of ten Reels a person must be able to remove one to add another,
+  and the profile has to be recomputed when one goes.
+- **Disconnect is two parts.** The database rows (Reels with numbers and analysis, the Instagram account and so its token, the profile, pending sign-ins, the
+  style files' records and the records of half-sent uploads) are deleted in one transaction, so the answer is only sent once they are gone. A `style_deletion`
+  job then aborts the half-sent uploads and deletes the person's style folder from storage, retrying until it works, and logs when it has. That job accepts only
+  a prefix of the form `users/<id>/style/`. Account deletion already removes the whole `users/<id>/` folder, style included, and a test proves it.
+- **The Style upload and the quota.** Plan limits for Style are a table (`STYLE_LIMITS` in `src/lib/plans.ts`), the same for every plan today; the largest
+  accepted file is `STYLE_MAX_REEL_BYTES`.

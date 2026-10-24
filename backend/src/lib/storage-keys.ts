@@ -18,3 +18,10 @@ export const exportKey = (userId: string, projectId: string, name: string) =>
   `${projectPrefix(userId, projectId)}exports/${name}`
 export const audioKey = (userId: string, projectId: string) =>
   `${projectPrefix(userId, projectId)}audio/audio.wav`
+
+/** Style Reels and their thumbnails: users/<id>/style/, so disconnecting is deleting one prefix. */
+export const stylePrefix = (userId: string) => `users/${userId}/style/`
+export const styleReelKey = (userId: string, assetId: string, ext: string) =>
+  `${stylePrefix(userId)}reels/${assetId}${ext}`
+export const styleThumbKey = (userId: string, reelId: string) =>
+  `${stylePrefix(userId)}thumbs/${reelId}.jpg`

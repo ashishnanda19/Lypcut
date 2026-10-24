@@ -1,4 +1,4 @@
-import { and, eq, inArray, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, isNull, type SQL } from 'drizzle-orm'
 import type { Db } from '../db/client.js'
 import { uploads } from '../db/schema/index.js'
 
@@ -14,11 +14,13 @@ export interface ActiveUpload {
  */
 export async function activeUploads(
   db: Db,
-  scope: { userId: string } | { projectId: string },
+  scope: { userId: string; styleOnly?: boolean } | { projectId: string },
 ): Promise<ActiveUpload[]> {
   const where: SQL | undefined = and(
     inArray(uploads.status, ['initiated', 'uploading', 'completing']),
     'userId' in scope ? eq(uploads.userId, scope.userId) : eq(uploads.projectId, scope.projectId),
+    // A style Reel's upload has no project; leaving a project's own uploads alone matters when only style data goes.
+    'userId' in scope && scope.styleOnly ? isNull(uploads.projectId) : undefined,
   )
   const rows = await db
     .select({ key: uploads.storageKey, uploadId: uploads.s3UploadId })

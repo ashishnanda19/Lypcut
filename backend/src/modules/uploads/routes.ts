@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { okSchema } from '../account/schema.js'
 import { idParam } from '../projects/schema.js'
 import {
+  completeStyleUploadResponse,
   completeUploadBody,
   completeUploadResponse,
   presignPartsBody,
@@ -15,7 +16,7 @@ import { UploadService } from './service.js'
 /**
  * Resumable uploads. The client talks to storage directly with presigned part URLs, so video bytes
  * never pass through this server:
- *   POST   /uploads              start (or resume) an upload for a project
+ *   POST   /uploads              start (or resume) an upload for a project, or for a style Reel (no project)
  *   GET    /uploads/:id          state, including which parts storage already has
  *   POST   /uploads/:id/parts    presigned URLs for the parts to send
  *   POST   /uploads/:id/complete stitch the parts, check the file, queue processing
@@ -66,7 +67,7 @@ export const uploadRoutes: FastifyPluginAsyncZod = async (app) => {
       schema: {
         params: idParam,
         body: completeUploadBody,
-        response: { 200: completeUploadResponse },
+        response: { 200: z.union([completeUploadResponse, completeStyleUploadResponse]) },
       },
     },
     async (req) => service.complete(req.user!, req.params.id, req.body ?? {}),

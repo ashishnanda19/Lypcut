@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { projects, uploads } from '../../src/db/schema/index.js'
+import { projects, reels, uploads } from '../../src/db/schema/index.js'
 import { uuidv7 } from '../../src/lib/ids.js'
 import { createTestApp, type TestApp } from '../helpers/app.js'
 import { TestClient } from '../helpers/client.js'
 import { resetDatabase } from '../helpers/db.js'
 import { makeVideo } from '../helpers/media.js'
 import { readyProject } from '../helpers/ready.js'
-import { fullUpload, startUpload } from '../helpers/upload.js'
+import { fullUpload, startStyleUpload, startUpload } from '../helpers/upload.js'
 import { ORIGIN, signup, type Person } from '../helpers/world.js'
 
 /**
@@ -19,7 +19,14 @@ import { ORIGIN, signup, type Person } from '../helpers/world.js'
 let t: TestApp
 let a: Person
 let b: Person
-let theirs: { projectId: string; uploadId: string; jobId: string; readyId: string }
+let theirs: {
+  projectId: string
+  uploadId: string
+  jobId: string
+  readyId: string
+  reelId: string
+  styleUploadId: string
+}
 let video: string
 
 beforeAll(async () => {
@@ -37,7 +44,15 @@ beforeEach(async () => {
   // B also has a finished upload, so they have a processing job.
   const finished = await fullUpload(b.c, video)
   const ready = await readyProject(t, b)
+  // And a Reel for style learning, and a style upload still in flight.
+  const [reel] = await t.deps.database.db
+    .insert(reels)
+    .values({ userId: b.id, source: 'upload', label: 'their reel' })
+    .returning()
+  const styleUpload = await startStyleUpload(b.c, video, { fileName: 'style.mp4' })
   theirs = {
+    reelId: reel!.id,
+    styleUploadId: styleUpload.upload.id,
     readyId: ready.projectId,
     projectId: started.projectId,
     uploadId: started.upload.id,
@@ -173,6 +188,24 @@ const ROUTES: Route[] = [
   },
   { name: 'complete an upload', method: 'POST', url: (i) => `/api/uploads/${i.uploadId}/complete` },
   { name: 'abort an upload', method: 'DELETE', url: (i) => `/api/uploads/${i.uploadId}` },
+  { name: 'remove their style Reel', method: 'DELETE', url: (i) => `/api/style/reels/${i.reelId}` },
+  { name: 'read their style upload', method: 'GET', url: (i) => `/api/uploads/${i.styleUploadId}` },
+  {
+    name: 'get part URLs for their style upload',
+    method: 'POST',
+    url: (i) => `/api/uploads/${i.styleUploadId}/parts`,
+    body: { partNumbers: [1] },
+  },
+  {
+    name: 'complete their style upload',
+    method: 'POST',
+    url: (i) => `/api/uploads/${i.styleUploadId}/complete`,
+  },
+  {
+    name: 'abort their style upload',
+    method: 'DELETE',
+    url: (i) => `/api/uploads/${i.styleUploadId}`,
+  },
   {
     name: 'start an upload in their project',
     method: 'POST',
@@ -196,6 +229,8 @@ describe('another user’s things', () => {
         uploadId: uuidv7(),
         jobId: uuidv7(),
         readyId: uuidv7(),
+        reelId: uuidv7(),
+        styleUploadId: uuidv7(),
       })
       expect(real.status).toBe(404)
       // The answer is the same as for something that does not exist, so ids cannot be probed.

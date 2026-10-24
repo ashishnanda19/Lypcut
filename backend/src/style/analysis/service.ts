@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { AppDeps } from '../../app/types.js'
 import {
@@ -10,6 +11,8 @@ import {
   userPreferences,
 } from '../../db/schema/index.js'
 import type { Log } from '../../lib/log.js'
+import { styleThumbKey } from '../../lib/storage-keys.js'
+import { makeThumbnail } from '../../media/transform.js'
 import { downloadTo, WorkDir } from '../../pipeline/workdir.js'
 import { TranscriptionError, type TranscriptionProvider } from '../../transcription/types.js'
 import { ALGO_VERSION } from './config.js'
@@ -37,7 +40,7 @@ export interface AnalysisResult {
 type ReelRow = typeof reels.$inferSelect
 
 /** The numbers a person or Instagram gave for a Reel, folded from every reading, newest value of each winning. */
-async function numbersByReel(
+export async function numbersByReel(
   db: AppDeps['database']['db'],
   reelIds: string[],
   durations: Map<string, number | null>,
@@ -119,6 +122,11 @@ export class StyleAnalysis {
       reelIds?: string[]
       signal?: AbortSignal
       onProgress?: (done: number, total: number) => void
+      /**
+       * Delete an uploaded Reel's video once it has been analysed (or cannot be): only the numbers and a thumbnail are kept.
+       * The worker always sets this; it is off by default so tests and tools can look at the file again.
+       */
+      deleteSources?: boolean
     } = {},
   ): Promise<AnalysisResult> {
     const rows = await this.db
@@ -151,9 +159,13 @@ export class StyleAnalysis {
           work,
           opts.signal,
         )
-        if (outcome.kind === 'cached') result.cached++
-        else if (outcome.kind === 'failed') result.failed++
-        else {
+        if (outcome.kind === 'cached') {
+          result.cached++
+          if (opts.deleteSources) await this.disposeSource(reel)
+        } else if (outcome.kind === 'failed') {
+          result.failed++
+          if (opts.deleteSources) await this.disposeSource(reel)
+        } else {
           pending.push({ reel, measured: outcome.measured, hash: outcome.hash })
           if (outcome.frames.length) toLabel.push({ id: reel.id, frames: outcome.frames })
         }
@@ -174,6 +186,7 @@ export class StyleAnalysis {
     for (const p of pending) {
       await this.store(p.reel, p.measured, p.hash, labels.get(p.reel.id))
       result.analysed++
+      if (opts.deleteSources) await this.disposeSource(p.reel)
     }
     if (result.analysed || result.failed) await this.rebuildProfile(userId)
     return result
@@ -231,6 +244,8 @@ export class StyleAnalysis {
         sceneThreshold: this.deps.config.SCENE_THRESHOLD,
         signal,
       })
+      if (!reel.thumbnailAssetId)
+        await this.makeThumbnail(reel, file, measured.durationSec, work, signal)
       const wantsLabel = measured.captions.status === 'ambiguous' && this.deps.llm.hasRealModel
       const frames = wantsLabel ? await jpegFrames(file, measured.frameTimes, work, { signal }) : []
       return { kind: 'measured', measured, hash, frames }
@@ -247,6 +262,62 @@ export class StyleAnalysis {
     } finally {
       work.remove('reel.mp4')
     }
+  }
+
+  /** A small picture of the Reel, kept after its video is deleted. Safe to make twice: it replaces the one before. */
+  private async makeThumbnail(
+    reel: ReelRow,
+    file: string,
+    durationSec: number,
+    work: WorkDir,
+    signal?: AbortSignal,
+  ) {
+    const local = work.file('thumb.jpg')
+    try {
+      await makeThumbnail(
+        file,
+        Math.max(0, Math.min(durationSec * 0.25, durationSec - 0.2)),
+        local,
+        { signal },
+      )
+      const body = fs.readFileSync(local)
+      const key = styleThumbKey(reel.userId, reel.id)
+      await this.deps.storage.putObject(key, body, 'image/jpeg')
+      await this.db
+        .insert(assets)
+        .values({
+          userId: reel.userId,
+          kind: 'thumbnail',
+          status: 'ready',
+          storageKey: key,
+          label: 'Thumbnail',
+          mimeType: 'image/jpeg',
+          sizeBytes: body.length,
+        })
+        .onConflictDoNothing({ target: assets.storageKey })
+      const [asset] = await this.db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(eq(assets.storageKey, key))
+      if (asset)
+        await this.db.update(reels).set({ thumbnailAssetId: asset.id }).where(eq(reels.id, reel.id))
+    } catch (e) {
+      // A Reel without a picture is still a Reel: the Style page shows a placeholder.
+      if (signal?.aborted) throw e
+      this.log.warn({ reelId: reel.id }, 'could not make a thumbnail for a style reel')
+    } finally {
+      work.remove('thumb.jpg')
+    }
+  }
+
+  /** Removes an uploaded Reel's video from storage and the database. What was measured stays. */
+  async disposeSource(reel: Pick<ReelRow, 'id' | 'assetId'>): Promise<void> {
+    if (!reel.assetId) return
+    const [asset] = await this.db.select().from(assets).where(eq(assets.id, reel.assetId))
+    if (!asset) return
+    await this.deps.storage.delete(asset.storageKey)
+    // The reel's link to it clears itself (on delete set null).
+    await this.db.delete(assets).where(eq(assets.id, asset.id))
   }
 
   private async hasAnalysis(reelId: string, hash: string): Promise<boolean> {

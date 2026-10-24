@@ -1,8 +1,8 @@
 import path from 'node:path'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Log } from '../../lib/log.js'
 import type { AppDeps } from '../../app/types.js'
-import { assets, jobs, projects, uploads, usageEvents } from '../../db/schema/index.js'
+import { assets, jobs, projects, reels, uploads, usageEvents } from '../../db/schema/index.js'
 import { AppError, err } from '../../lib/errors.js'
 import { sha256Stream } from '../../lib/hash.js'
 import { probeMedia, type MediaInfo } from '../../lib/ffprobe.js'
@@ -10,11 +10,13 @@ import { requireProject, requireUpload } from '../../lib/ownership.js'
 import {
   limitsFor,
   monthlyUploadsProblem,
+  reelLengthProblem,
+  styleLimitsFor,
   videoLengthProblem,
   type PlanId,
 } from '../../lib/plans.js'
 import { uuidv7 } from '../../lib/ids.js'
-import { rawKey } from '../../lib/storage-keys.js'
+import { rawKey, styleReelKey } from '../../lib/storage-keys.js'
 import { enqueueJob } from '../../queue/enqueue.js'
 import { toJobDto } from '../jobs/dto.js'
 import { ProjectService, ACTIVE_UPLOAD_STATES, uploadsUsedThisMonth } from '../projects/service.js'
@@ -88,13 +90,15 @@ export class UploadService {
   async start(
     user: User,
     input: {
-      projectId: string
+      projectId?: string
+      purpose?: 'style_reel'
       fileName: string
       contentType?: string
       sizeBytes: number
       durationSec?: number
     },
   ): Promise<{ upload: UploadDto; resumed: boolean }> {
+    if (!input.projectId) return this.startStyleReel(user, input)
     const project = await requireProject(this.db, user.id, input.projectId)
     if (project.status !== 'uploading') {
       throw err.conflict('CONFLICT', 'This project already has its video.')
@@ -192,6 +196,105 @@ export class UploadService {
       })
     } catch (e) {
       // The database refused after storage had already opened the upload: do not leave it behind.
+      if (createdKey && createdUploadId) {
+        await this.storage.abortMultipart(createdKey, createdUploadId).catch(() => undefined)
+      }
+      throw e
+    }
+  }
+
+  /**
+   * A Reel for style learning. The same resumable upload as a project's video, with no project: it is limited by how many
+   * Reels the person already has (not by the monthly project quota) and by the Reel length limit, and it ends up as a
+   * `style_reel` asset under the person's style folder.
+   */
+  private async startStyleReel(
+    user: User,
+    input: { fileName: string; contentType?: string; sizeBytes: number; durationSec?: number },
+  ): Promise<{ upload: UploadDto; resumed: boolean }> {
+    const ext = path.extname(input.fileName).toLowerCase()
+    const canonicalType = EXTENSIONS[ext]
+    if (!canonicalType || !DECLARED_TYPES.has((input.contentType ?? '').toLowerCase())) {
+      throw err.unsupported('Upload an MP4, MOV, MKV, WebM or AVI video.')
+    }
+    if (input.sizeBytes > this.cfg.STYLE_MAX_REEL_BYTES) {
+      throw err.tooLarge(
+        `A Reel can be up to ${Math.round(this.cfg.STYLE_MAX_REEL_BYTES / MiB)} MB.`,
+      )
+    }
+    const limits = styleLimitsFor(user.plan)
+    if (input.durationSec !== undefined) {
+      const tooLong = reelLengthProblem(limits, input.durationSec)
+      if (tooLong)
+        throw err.limit('LIMIT_REEL_LENGTH', tooLong, { maxSeconds: limits.maxReelSeconds })
+    }
+
+    const { partSize, totalParts } = planParts(input.sizeBytes, this.cfg.UPLOAD_PART_SIZE_MB)
+    const now = new Date()
+    let createdUploadId: string | undefined
+    let createdKey: string | undefined
+    try {
+      return await this.db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`upload:${user.id}`}::text))`)
+
+        const mine = and(eq(uploads.userId, user.id), isNull(uploads.projectId))
+        const active = await tx
+          .select()
+          .from(uploads)
+          .where(and(mine, inArray(uploads.status, [...ACTIVE_UPLOAD_STATES])))
+        const same = active.find(
+          (u) =>
+            u.fileName === input.fileName && u.sizeBytes === input.sizeBytes && u.expiresAt > now,
+        )
+        // Starting the same file again resumes it instead of making a second one.
+        if (same) return { upload: this.toDto(same), resumed: true }
+
+        const [{ n: have } = { n: 0 }] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(reels)
+          .where(and(eq(reels.userId, user.id), eq(reels.source, 'upload')))
+        const inFlight = active.filter((u) => u.expiresAt > now).length
+        if (have + inFlight >= limits.maxUploadedReels) {
+          throw err.limit(
+            'LIMIT_STYLE_REELS',
+            `You can have up to ${limits.maxUploadedReels} Reels for style learning. Remove one to add another.`,
+            { max: limits.maxUploadedReels },
+          )
+        }
+
+        const assetId = uuidv7()
+        const key = styleReelKey(user.id, assetId, ext)
+        createdKey = key
+        createdUploadId = await this.storage.createMultipart(key, canonicalType)
+        await tx.insert(assets).values({
+          id: assetId,
+          userId: user.id,
+          kind: 'style_reel',
+          status: 'pending',
+          storageKey: key,
+          label: input.fileName,
+          mimeType: canonicalType,
+          sizeBytes: input.sizeBytes,
+        })
+        const [row] = await tx
+          .insert(uploads)
+          .values({
+            userId: user.id,
+            assetId,
+            fileName: input.fileName,
+            contentType: canonicalType,
+            sizeBytes: input.sizeBytes,
+            declaredDurationSec: input.durationSec,
+            storageKey: key,
+            s3UploadId: createdUploadId,
+            partSize,
+            totalParts,
+            expiresAt: new Date(now.getTime() + this.cfg.UPLOAD_TTL_HOURS * 3600_000),
+          })
+          .returning()
+        return { upload: this.toDto(row!), resumed: false }
+      })
+    } catch (e) {
       if (createdKey && createdUploadId) {
         await this.storage.abortMultipart(createdKey, createdUploadId).catch(() => undefined)
       }
@@ -328,6 +431,17 @@ export class UploadService {
       const url = await this.storage.presignInternalGet(row.storageKey, 300)
       const media = await probeMedia(url, { bin: this.cfg.FFPROBE_BIN })
 
+      if (!row.projectId) {
+        const limits = styleLimitsFor(user.plan)
+        const tooLong = reelLengthProblem(limits, media.durationSec)
+        if (tooLong) {
+          throw err.limit('LIMIT_REEL_LENGTH', tooLong, {
+            maxSeconds: limits.maxReelSeconds,
+            durationSec: Math.round(media.durationSec),
+          })
+        }
+        return await this.acceptStyleReel(user, row, media, parts, input.checksum)
+      }
       const tooLong = videoLengthProblem(limitsFor(user.plan), media.durationSec)
       if (tooLong) {
         throw err.limit('LIMIT_VIDEO_LENGTH', tooLong, {
@@ -449,7 +563,64 @@ export class UploadService {
     return { upload: this.toDto(result.upload), project, job: toJobDto(result.job) }
   }
 
+  /** A style Reel passed every check: it becomes a Reel, waiting for the person to submit their Reels for analysis. */
+  private async acceptStyleReel(
+    user: User,
+    row: UploadRow,
+    media: MediaInfo,
+    parts: UploadRow['partsReceived'],
+    checksum?: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      await tx
+        .update(assets)
+        .set({
+          status: 'ready',
+          durationSec: media.durationSec,
+          width: media.width,
+          height: media.height,
+          codec: media.videoCodec,
+          checksum: checksum ?? null,
+          metadata: { format: media.formatName, fps: media.fps, hasAudio: media.hasAudio },
+        })
+        .where(eq(assets.id, row.assetId))
+      const [done] = await tx
+        .update(uploads)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+          checksum: checksum ?? null,
+          partsReceived: parts,
+        })
+        .where(eq(uploads.id, row.id))
+        .returning()
+      const [reel] = await tx
+        .insert(reels)
+        .values({
+          userId: user.id,
+          source: 'upload',
+          assetId: row.assetId,
+          label: row.fileName.replace(/\.[^./\\]+$/, '').slice(0, 120) || 'Reel',
+          durationSec: media.durationSec,
+          contentHash: checksum ?? null,
+        })
+        .returning()
+      return {
+        upload: this.toDto(done!),
+        reel: { id: reel!.id, label: reel!.label, durationSec: reel!.durationSec },
+      }
+    })
+  }
+
   private async completedResult(row: UploadRow) {
+    if (!row.projectId) {
+      const [reel] = await this.db.select().from(reels).where(eq(reels.assetId, row.assetId))
+      if (!reel) throw err.conflict('CONFLICT', 'This Reel has already been used or removed.')
+      return {
+        upload: this.toDto(row),
+        reel: { id: reel.id, label: reel.label, durationSec: reel.durationSec },
+      }
+    }
     const project = await this.projects.get(row.userId, projectOf(row))
     const [job] = await this.db
       .select()
@@ -507,7 +678,7 @@ export class UploadService {
   toDto(row: UploadRow): UploadDto {
     return {
       id: row.id,
-      projectId: projectOf(row),
+      projectId: row.projectId,
       status: row.status,
       fileName: row.fileName,
       sizeBytes: row.sizeBytes,

@@ -77,3 +77,35 @@ export async function fullUpload(
   )
   return { projectId, upload, done }
 }
+
+/** Starts an upload for a style Reel: no project, `purpose: 'style_reel'`. */
+export async function startStyleUpload(
+  c: TestClient,
+  file: string,
+  opts: { fileName?: string; durationSec?: number; contentType?: string } = {},
+): Promise<{ upload: UploadInfo; res: Res }> {
+  const res = await c.post('/api/uploads', {
+    purpose: 'style_reel',
+    fileName: opts.fileName ?? 'reel.mp4',
+    contentType: opts.contentType ?? 'video/mp4',
+    sizeBytes: fs.statSync(file).size,
+    durationSec: opts.durationSec,
+  })
+  return { upload: res.body.upload as UploadInfo, res }
+}
+
+/** Uploads a style Reel all the way through and returns what finishing it said. */
+export async function fullStyleUpload(
+  c: TestClient,
+  file: string,
+  opts: Parameters<typeof startStyleUpload>[2] & { checksum?: string } = {},
+) {
+  const { upload, res } = await startStyleUpload(c, file, opts)
+  expect(res.status, JSON.stringify(res.body)).toBeLessThan(300)
+  await putParts(c, upload, file)
+  const done = await c.post(
+    `/api/uploads/${upload.id}/complete`,
+    opts.checksum ? { checksum: opts.checksum } : {},
+  )
+  return { upload, done }
+}

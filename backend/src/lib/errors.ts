@@ -19,6 +19,8 @@ export type ErrorCode =
   | 'UNSUPPORTED_MEDIA'
   | 'LIMIT_VIDEO_LENGTH'
   | 'LIMIT_MONTHLY_UPLOADS'
+  | 'LIMIT_STYLE_REELS'
+  | 'LIMIT_REEL_LENGTH'
   | 'UPLOAD_EXPIRED'
   | 'UPLOAD_INCOMPLETE'
   | 'CHECKSUM_MISMATCH'
@@ -55,7 +57,8 @@ export const err = {
   tooLarge: (message: string) => new AppError(413, 'PAYLOAD_TOO_LARGE', message),
   unsupported: (message: string) => new AppError(415, 'UNSUPPORTED_MEDIA', message),
   limit: (
-    code: 'LIMIT_VIDEO_LENGTH' | 'LIMIT_MONTHLY_UPLOADS',
+    code:
+      'LIMIT_VIDEO_LENGTH' | 'LIMIT_MONTHLY_UPLOADS' | 'LIMIT_STYLE_REELS' | 'LIMIT_REEL_LENGTH',
     message: string,
     details?: Record<string, unknown>,
   ) => new AppError(403, code, message, details),

@@ -54,3 +54,28 @@ export function monthlyUploadsProblem(limits: PlanLimits, usedThisMonth: number)
 /** Start of the current calendar month, UTC. */
 export const startOfMonthUtc = (now = new Date()): Date =>
   new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+
+/**
+ * What the Style feature allows, by plan. Free accounts can use it, with these limits; they are the same for every plan
+ * today, and are kept per plan so changing that is an edit here.
+ */
+export interface StyleLimits {
+  /** Reels a person can have uploaded for style learning at once (delete one to add another). */
+  maxUploadedReels: number
+  /** Longest single Reel, in seconds. */
+  maxReelSeconds: number
+}
+
+export const STYLE_LIMITS: Record<PlanId, StyleLimits> = {
+  free: { maxUploadedReels: 10, maxReelSeconds: 90 },
+  creator: { maxUploadedReels: 10, maxReelSeconds: 90 },
+  studio: { maxUploadedReels: 10, maxReelSeconds: 90 },
+}
+
+export const styleLimitsFor = (plan: PlanId): StyleLimits => STYLE_LIMITS[plan]
+
+/** Returns an error message if the Reel is too long for the plan, otherwise null. */
+export function reelLengthProblem(limits: StyleLimits, durationSec: number): string | null {
+  if (durationSec <= limits.maxReelSeconds + DURATION_TOLERANCE_SEC) return null
+  return `This Reel is ${formatDuration(durationSec)} long. Style Reels can be up to ${formatDuration(limits.maxReelSeconds)}.`
+}

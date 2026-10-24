@@ -14,7 +14,8 @@ export const uploadStatusSchema = z.enum([
 
 export const uploadSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  /** Null for a style Reel's upload, which belongs to the person and not to a project. */
+  projectId: z.string().nullable(),
   status: uploadStatusSchema,
   fileName: z.string(),
   sizeBytes: z.number(),
@@ -28,19 +29,26 @@ export const uploadSchema = z.object({
 })
 export type UploadDto = z.infer<typeof uploadSchema>
 
-export const startUploadBody = z.object({
-  projectId: z.string(),
-  fileName: z.string().trim().min(1, 'Choose a video file.').max(255),
-  /** The type the browser reports. Informational: the file is checked by its content on completion. */
-  contentType: z.string().max(100).optional(),
-  sizeBytes: z.number().int().positive('That file is empty.'),
-  /** What the browser read from the file. Used for an early limit check only, never trusted. */
-  durationSec: z
-    .number()
-    .min(0)
-    .max(24 * 3600)
-    .optional(),
-})
+export const startUploadBody = z
+  .object({
+    /** The project the video is for. Leave it out, and send `purpose`, for a Reel that teaches the assistant your style. */
+    projectId: z.string().optional(),
+    purpose: z.literal('style_reel').optional(),
+    fileName: z.string().trim().min(1, 'Choose a video file.').max(255),
+    /** The type the browser reports. Informational: the file is checked by its content on completion. */
+    contentType: z.string().max(100).optional(),
+    sizeBytes: z.number().int().positive('That file is empty.'),
+    /** What the browser read from the file. Used for an early limit check only, never trusted. */
+    durationSec: z
+      .number()
+      .min(0)
+      .max(24 * 3600)
+      .optional(),
+  })
+  .refine((b) => (b.projectId === undefined) === (b.purpose === 'style_reel'), {
+    message: 'Send a projectId, or purpose "style_reel" without one.',
+    path: ['projectId'],
+  })
 
 export const presignPartsBody = z.object({
   partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(100),
@@ -67,4 +75,10 @@ export const completeUploadResponse = z.object({
   upload: uploadSchema,
   project: projectSchema,
   job: jobSchema,
+})
+
+/** What finishing a style Reel's upload returns: the Reel, waiting to be analysed once the person submits their Reels. */
+export const completeStyleUploadResponse = z.object({
+  upload: uploadSchema,
+  reel: z.object({ id: z.string(), label: z.string(), durationSec: z.number().nullable() }),
 })

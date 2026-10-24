@@ -3,6 +3,7 @@ import type { AppDeps } from '../../app/types.js'
 import { projects, uploads } from '../../db/schema/index.js'
 import type { Log } from '../../lib/log.js'
 import { ProjectService, ACTIVE_UPLOAD_STATES } from '../projects/service.js'
+import { StyleService } from '../style/service.js'
 import { UploadService } from './service.js'
 
 /** A request that has been 'completing' this long is not coming back (the server died mid-way). */
@@ -13,6 +14,8 @@ export interface SweepResult {
   expired: number
   stuck: number
   abandonedProjects: number
+  /** Style Reels uploaded but never submitted for learning within a day. */
+  unsubmittedReels: number
 }
 
 /**
@@ -75,11 +78,15 @@ export async function sweepUploads(
     .limit(BATCH)
   for (const p of abandoned) await projectsService.deleteProjectRows(p.ownerId, p.id)
 
+  const unsubmittedReels = await new StyleService(deps, log).sweepUnsubmitted(now)
+
   const result = {
     expired: expiredRows.length,
     stuck: stuckRows.length,
     abandonedProjects: abandoned.length,
+    unsubmittedReels,
   }
-  if (result.expired || result.stuck || result.abandonedProjects) log.info(result, 'upload sweep')
+  if (result.expired || result.stuck || result.abandonedProjects || result.unsubmittedReels)
+    log.info(result, 'upload sweep')
   return result
 }

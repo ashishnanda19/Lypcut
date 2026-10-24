@@ -481,7 +481,12 @@ describe('expiry and cleanup', () => {
   it('the sweep leaves live uploads alone', async () => {
     const { c } = await signup(t)
     const { upload } = await startUpload(c, small)
-    expect(await sweepUploads(t.deps, log)).toEqual({ expired: 0, stuck: 0, abandonedProjects: 0 })
+    expect(await sweepUploads(t.deps, log)).toEqual({
+      expired: 0,
+      stuck: 0,
+      abandonedProjects: 0,
+      unsubmittedReels: 0,
+    })
     expect((await uploadRow(upload.id)).status).toBe('initiated')
   })
 
