@@ -292,7 +292,7 @@ job'}` for anything it will not show). `GET /api/jobs/:id` is the polling fallba
 
 ## Step 9: the front end uses the real API
 
-The front end (the parent folder) is switched by `VITE_API_MODE=real|mock` (mock is the default, so the demo still works with no
+The front end (`frontend/`) is switched by `VITE_API_MODE=real|mock` (mock is the default, so the demo still works with no
 server). In real mode the in-browser mock answers only `/api/style/*`. Everything below is a change on the front-end side
 unless it says otherwise; the backend changed in two small ways, noted at the end.
 
@@ -346,4 +346,4 @@ unless it says otherwise; the backend changed in two small ways, noted at the en
   non-browser clients.
 - In real mode the front end keeps using MSW for `/style/*` only (Phase 3).
 - The MP4 render stays a stand-in in Phase 1. OTIO export is real.
-- The backend lives in its own folder (`backend/`) inside the front-end project, apart from the front-end code.
+- One repository with two folders: `frontend/` and `backend/`.

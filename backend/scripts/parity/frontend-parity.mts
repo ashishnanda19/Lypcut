@@ -3,7 +3,7 @@
  * They are two copies of one engine, and the server must agree with the browser about what an edit does.
  *
  *   npm run parity            compares 10 random runs of 150 edits each
- *   FRONTEND_DIR=... npm run parity   if the front end is not the parent folder
+ *   FRONTEND_DIR=... npm run parity   if the front end is not at ../frontend
  *
  * It lives outside the test suite because it reads the sibling front-end repository. Both engines start every step
  * from one shared state, apply the same op, and must either both refuse it (with the same message) or both produce
@@ -17,7 +17,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const here = path.dirname(new URL(import.meta.url).pathname)
-const FE = path.resolve(process.env.FRONTEND_DIR ?? path.join(here, '../../..'))
+const FE = path.resolve(process.env.FRONTEND_DIR ?? path.join(here, '../../../frontend'))
 const STRICT = process.env.STRICT === '1'
 const load = (rel: string) => import(pathToFileURL(path.join(FE, rel)).href)
 
