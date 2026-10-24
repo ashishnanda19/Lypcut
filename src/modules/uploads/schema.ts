@@ -61,7 +61,7 @@ export const completeUploadBody = z
       .transform((s) => s.toLowerCase())
       .optional(),
   })
-  .optional()
+  .nullish()
 
 export const completeUploadResponse = z.object({
   upload: uploadSchema,

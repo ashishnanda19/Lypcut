@@ -64,7 +64,7 @@ export class TestClient {
   get = (url: string, headers?: Record<string, string>) =>
     this.request('GET', url, undefined, headers)
   post = (url: string, payload?: unknown, headers?: Record<string, string>) =>
-    this.request('POST', url, payload ?? {}, headers)
+    this.request('POST', url, payload, headers)
   patch = (url: string, payload: unknown, headers?: Record<string, string>) =>
     this.request('PATCH', url, payload, headers)
   del = (url: string, headers?: Record<string, string>) =>

@@ -27,7 +27,8 @@ const loginBody = z.object({
   password: z.string().min(1, 'Enter your password.').max(128),
 })
 
-const refreshBody = z.object({ refreshToken: z.string().min(1).max(200).optional() }).optional()
+// A browser refreshes with its cookie and sends no body, which Fastify hands to validation as null.
+const refreshBody = z.object({ refreshToken: z.string().min(1).max(200).optional() }).nullish()
 
 const tokensSchema = z.object({
   accessToken: z.string(),
