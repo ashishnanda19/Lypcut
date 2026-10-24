@@ -1,4 +1,5 @@
 import cors from '@fastify/cors'
+import compress from '@fastify/compress'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
 import type { FastifyInstance } from 'fastify'
@@ -18,6 +19,8 @@ export async function registerSecurity(app: FastifyInstance): Promise<void> {
   })
 
   await app.register(cookie)
+  // Transcripts and timelines are large JSON that compresses well; the live feed and health probes are unaffected.
+  await app.register(compress, { threshold: 1024, encodings: ['br', 'gzip'] })
 
   // Counters live in Redis so every API instance shares one limit. A dedicated connection fails
   // fast, and skipOnError keeps the API up if Redis blips.

@@ -1,10 +1,26 @@
-import { assets, projects, timelines, timelineVersions } from '../../src/db/schema/index.js'
+import {
+  assets,
+  chapters,
+  highlights,
+  projects,
+  scenes,
+  silences,
+  timelines,
+  timelineVersions,
+  transcriptSentences,
+  transcripts,
+  transcriptWords,
+} from '../../src/db/schema/index.js'
+import { findChapters, findHighlights } from '../../src/transcription/insights.js'
+import { fixtureTranscript, LINES } from './transcript-fixture.js'
 import type { Timeline } from '../../src/timeline-core/types.js'
 import type { TestApp } from './app.js'
 import { sampleTimeline } from './timeline.js'
 import type { Person } from './world.js'
 
 export interface ReadyProject {
+  /** The transcript that was stored, when `content` was asked for. */
+  content?: ReturnType<typeof fixtureTranscript>
   projectId: string
   /** The timeline as the pipeline would have built it (version 0). */
   timeline: Timeline
@@ -18,7 +34,7 @@ export interface ReadyProject {
 export async function readyProject(
   t: TestApp,
   person: Person,
-  opts: { title?: string; fileName?: string } = {},
+  opts: { title?: string; fileName?: string; content?: boolean | typeof LINES } = {},
 ): Promise<ReadyProject> {
   const { db } = t.deps.database
   const sample = sampleTimeline()
@@ -54,5 +70,154 @@ export async function readyProject(
     op: { type: 'batch', ops: [] },
     inverse: { type: 'batch', ops: [] },
   })
-  return { projectId: project!.id, timeline: sample.timeline, words: sample.words }
+  const content = opts.content
+    ? await seedContent(t, project!.id, person.id, opts.content === true ? LINES : opts.content)
+    : undefined
+  return { projectId: project!.id, timeline: sample.timeline, words: sample.words, content }
+}
+
+/**
+ * Stores a full set of content for a project: transcript, words, sentences, scenes with thumbnails, a proxy,
+ * silences, hooks and chapters. The files are real objects in storage, so links can be followed.
+ */
+export async function seedContent(
+  t: TestApp,
+  projectId: string,
+  userId: string,
+  lines: typeof LINES = LINES,
+) {
+  const { db } = t.deps.database
+  const fx = fixtureTranscript(lines)
+  const tr = fx.transcript
+  const prefix = `users/${userId}/projects/${projectId}`
+
+  const [row] = await db
+    .insert(transcripts)
+    .values({
+      projectId,
+      language: tr.language,
+      provider: 'fixture',
+      model: 'none',
+      speakers: tr.speakers,
+      wordCount: tr.words.length,
+    })
+    .returning()
+  const wordRows = tr.words.map((w, idx) => ({
+    transcriptId: row!.id,
+    projectId,
+    idx,
+    text: w.text,
+    dev: w.dev,
+    norm: w.norm,
+    startSec: w.start,
+    endSec: w.end,
+    speaker: w.speaker,
+    confidence: w.confidence,
+    language: w.language,
+    filler: w.filler,
+  }))
+  for (let i = 0; i < wordRows.length; i += 2000) {
+    await db.insert(transcriptWords).values(wordRows.slice(i, i + 2000))
+  }
+  const sentenceRows = tr.sentences.map((s) => ({
+    transcriptId: row!.id,
+    projectId,
+    idx: s.idx,
+    speaker: s.speaker,
+    fromWord: s.from,
+    toWord: s.to,
+    startSec: s.start,
+    endSec: s.end,
+    text: s.text,
+    dev: s.dev,
+    norm: s.norm,
+  }))
+  for (let i = 0; i < sentenceRows.length; i += 1000) {
+    await db.insert(transcriptSentences).values(sentenceRows.slice(i, i + 1000))
+  }
+
+  // Three scenes, each with a real thumbnail object.
+  const third = fx.duration / 3
+  const thumbs: string[] = []
+  for (let i = 0; i < 3; i++) {
+    const key = `${prefix}/thumbs/scene-${i}.jpg`
+    await t.deps.storage.putObject(key, Buffer.from(`thumb-${i}`), 'image/jpeg')
+    const [a] = await db
+      .insert(assets)
+      .values({
+        projectId,
+        kind: 'thumbnail',
+        status: 'ready',
+        storageKey: key,
+        label: `Thumbnail ${i + 1}`,
+        mimeType: 'image/jpeg',
+        sizeBytes: 8,
+      })
+      .returning()
+    thumbs.push(a!.id)
+  }
+  await db.insert(scenes).values(
+    thumbs.map((thumbnailAssetId, i) => ({
+      projectId,
+      idx: i,
+      label: i === 0 ? 'Intro' : `Scene ${i + 1}`,
+      startSec: i * third,
+      endSec: (i + 1) * third,
+      thumbnailAssetId,
+    })),
+  )
+  const proxyKey = `${prefix}/proxy/proxy.mp4`
+  await t.deps.storage.putObject(proxyKey, Buffer.from('proxy-bytes'), 'video/mp4')
+  await db.insert(assets).values({
+    projectId,
+    kind: 'proxy',
+    status: 'ready',
+    storageKey: proxyKey,
+    label: 'Editing proxy (540p)',
+    mimeType: 'video/mp4',
+    sizeBytes: 11,
+    durationSec: fx.duration,
+    width: 960,
+    height: 540,
+  })
+  await db.insert(assets).values({
+    projectId,
+    kind: 'scene_clip',
+    status: 'pending',
+    storageKey: `${prefix}/scenes/pending.mp4`,
+    label: 'Not ready',
+  })
+
+  await db.insert(silences).values([
+    { projectId, startSec: 10, endSec: 11.2 },
+    { projectId, startSec: 30, endSec: 31 },
+  ])
+  const hooks = findHighlights(tr.sentences, tr.words, fx.duration)
+  if (hooks.length) {
+    await db.insert(highlights).values(
+      hooks.map((h, i) => ({
+        projectId,
+        idx: i,
+        title: h.title,
+        startSec: h.start,
+        endSec: h.end,
+        hookScore: h.hookScore,
+        reason: h.reason,
+        thumbSeed: `${projectId}-hook-${i}`,
+      })),
+    )
+  }
+  const parts = findChapters(tr.sentences, fx.duration, { minSec: 20 })
+  if (parts.length) {
+    await db.insert(chapters).values(
+      parts.map((c, i) => ({
+        projectId,
+        idx: i,
+        title: c.title,
+        startSec: c.start,
+        endSec: c.end,
+      })),
+    )
+  }
+  return fx
 }

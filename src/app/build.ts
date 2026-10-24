@@ -9,8 +9,10 @@ import { loggerOptions } from '../lib/logger.js'
 import { healthRoutes } from '../modules/health/routes.js'
 import { accountRoutes } from '../modules/account/routes.js'
 import { authRoutes } from '../modules/auth/routes.js'
+import { contentRoutes } from '../modules/content/routes.js'
 import { jobRoutes } from '../modules/jobs/routes.js'
 import { projectRoutes } from '../modules/projects/routes.js'
+import { searchRoutes } from '../modules/search/routes.js'
 import { timelineRoutes } from '../modules/timeline/routes.js'
 import { uploadRoutes } from '../modules/uploads/routes.js'
 import { registerAuth } from './plugins/auth.js'
@@ -68,6 +70,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register(projectRoutes)
       await api.register(uploadRoutes)
       await api.register(timelineRoutes)
+      await api.register(contentRoutes)
+      await api.register(searchRoutes)
       await api.register(jobRoutes)
       // More modules mount here as each step lands.
     },

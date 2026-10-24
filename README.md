@@ -99,6 +99,20 @@ The worker runs eight stages per project and reports each on the job (`step`, `d
 
 Each stage is checkpointed and idempotent, so a failed job resumes at the stage that failed.
 
+### Reading a project
+
+```
+GET /api/projects/:id/transcript[?from=&to=]   words (Roman + Devanagari), speakers, sentences
+GET /api/projects/:id/scenes | highlights | chapters
+GET /api/projects/:id/search?q=funding&limit=8   find moments (Roman, Devanagari, whole sentences, misspellings)
+GET /api/projects/:id/summary
+GET /api/projects/:id/assets[?kind=]             files with short-lived links
+GET /api/projects/:id/assets/:assetId/url        a fresh link for one file
+```
+
+A project that is still processing answers `409 NOT_READY`. Video bytes never pass through the API: files are presigned links
+(or CDN links once `CDN_BASE_URL` is set).
+
 ### Editing the timeline
 
 ```

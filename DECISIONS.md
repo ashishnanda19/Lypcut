@@ -257,6 +257,39 @@ job'}` for anything it will not show). `GET /api/jobs/:id` is the polling fallba
   upload's file name (`media/<name>`) so an editor relinks the obvious file. The download name is safe for Hindi titles
   (ASCII fallback plus RFC 5987 `filename*`).
 
+## Step 8: read APIs
+
+- **Content is read by what the editor already calls.** `GET /projects/:id/transcript | scenes | highlights | chapters | search` return the
+  front end's types exactly (a word's `filler` only when true, sentence ids `s0..`, highlight ids `hl_0..`, best hook first). Scene ids
+  (`s0`) match the timeline's clip ids (`v_s0`, `a_s0`), so a scene and its clips line up.
+- **The transcript is whole by default, with an optional time range.** The editor loads it once and works from it (and sentence and
+  search indices point into the full word list), so the default is everything. `?from=&to=` (seconds) returns only the words overlapping that
+  range, with sentence indices left global and `range.wordOffset` saying where the slice starts: that is the paging a very long
+  recording needs. Fixed-size paging by word count would break those global indices.
+- **"Not ready" is an error, not an empty list.** Reading content of a project still processing is `409 NOT_READY`. The editor caches
+  these responses forever, so an empty answer given too early would stay empty.
+- **Files are links, never bytes.** `GET /projects/:id/assets[?kind=]` lists a project's files, each with a link that expires (default
+  1 h, `PRESIGN_GET_TTL_SEC`) and is signed for that one object; `GET .../assets/:id/url` mints a fresh one, because a long editing
+  session outlives the links in the project payload. Byte ranges work (streaming 206), the original and exports download under the name the person
+  gave them, a file that is not ready has no link, and with `CDN_BASE_URL` set the links point at the CDN instead (CloudFront signing slots
+  into `Storage.presignGet`). Nothing is proxied through the API.
+- **Search keeps the editor's behaviour, and finds more.** The scoring is the front end's (`src/lib/search.ts`): filler words dropped from
+  a natural query, weighted matches (exact, prefix, synonym group, one typo), sentences kept above a threshold, short ones widened with
+  the next for context, no overlapping clips. Two improvements: words are compared by their **spelling-folded key**, so "funding" finds
+  "phunding" (a real Whisper spelling), and Devanagari and Roman queries meet through the lexicon.
+- **Postgres narrows, code decides.** The database does the indexed part: a full-text prefix query over the Roman form (`tsvector`), trigram
+  similarity (`pg_trgm`, `<%`, threshold set per transaction) for near spellings, and a substring match for Devanagari. Only those
+  sentences (capped at 600) have their words loaded and scored in code. Scoring in code keeps the ranking independent of the database's
+  locale, which changes how Devanagari is split into words between a laptop and RDS. A **differential test** compares the service with the
+  in-memory algorithm over 60 queries (Roman, Devanagari, synonyms, typos, whole sentences) and requires identical results; mutating away the
+  trigram condition fails it.
+- **Hostile queries are plain text.** Folded Roman forms are `a-z0-9` only, so a text-search query cannot be malformed by what someone types;
+  LIKE wildcards are escaped; everything else is a bound parameter. Tested with SQL fragments, wildcards, NULs, emoji, other scripts and a
+  200-character query. Over 200 characters is a 422; under 2 is no search.
+- **Performance.** An 80,000-word transcript (about 7,000 sentences) is searched in well under 1.5 s (a test bar, not the typical figure).
+- **A summary endpoint** (`GET /projects/:id/summary`) returns counts of what was found and the timeline version in one call.
+- **Responses are compressed** (brotli or gzip above 1 KB): transcripts and timelines are large JSON that compresses well.
+
 ## Agreed with the product owner before building
 
 - Auth tokens travel in httpOnly cookies (SameSite=Lax, Origin check). Bearer tokens are also accepted for
