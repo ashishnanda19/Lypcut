@@ -2,7 +2,7 @@
 
 AI-native video editing for creators. Chat with an assistant, edit by transcript, get Reels-ready 9:16 exports. First-class Hindi, Hinglish and English.
 
-This repo is the **front end**. It runs against either the in-browser mock API or the real backend in the sibling folder `../lypcut-backend`, chosen by one flag.
+This repo is the **front end**. It runs against either the in-browser mock API or the real backend in the `backend/` folder, chosen by one flag.
 
 ## Run it
 
@@ -17,10 +17,10 @@ npm run dev          # http://localhost:5173, mock API (no server needed)
 
 ```bash
 # 1. Start the backend (Postgres, Redis, storage, API, worker). The first run downloads a speech model (~465 MB).
-cd ../lypcut-backend && docker compose up -d
+cd backend && docker compose up -d
 
 # 2. Start the front end against it.
-cd ../lypcut
+cd ..
 echo "VITE_API_MODE=real" > .env.local
 npm run dev          # /api and the job feed are proxied to http://localhost:4000
 ```

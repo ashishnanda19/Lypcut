@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * End-to-end tests against the real backend (../lypcut-backend, `docker compose up`).
+ * End-to-end tests against the real backend (./backend, `docker compose up`).
  *   npm run e2e:real
  * The app runs with VITE_API_MODE=real and talks to the backend through the dev proxy. The page's origin must be in the
  * backend's CORS_ORIGINS: localhost:5173 is by default; for another port set E2E_PORT and start the backend with

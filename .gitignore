@@ -26,3 +26,6 @@ dist-ssr
 # Playwright output
 test-results/
 playwright-report/
+
+# The backend is its own project with its own git history
+/backend/

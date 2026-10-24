@@ -5,7 +5,7 @@ import { longVideo, speechVideo } from './helpers/speech'
 /**
  * The same story as the mock happy path, but every request goes to the real backend: sign up, upload a video,
  * wait for it to be transcribed, edit it, and check the edit is really saved on the server.
- * Needs the backend running (`docker compose up` in ../lypcut-backend) and a video with speech
+ * Needs the backend running (`docker compose up` in ./backend) and a video with speech
  * (macOS makes one itself; otherwise set E2E_VIDEO).
  */
 test('real backend: sign up, upload, process, edit, undo, reload, export', async ({ page }) => {
