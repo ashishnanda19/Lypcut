@@ -623,7 +623,7 @@ Consequences:
   be measured (too long, not a video, no file) is marked `failed` with a reason and does not fail the job; an outage (storage, speech recognition)
   does, and the queue retries it.
 - **Style work has its own queue** (`style`, `STYLE_CONCURRENCY`, default 1) so learning a style never takes a worker from an edit.
-- **The summary sentence** is written from five figures (timing, seconds between cuts, top look, number of Reels, confidence) in the person's language. A
+- **The summary sentence** is written from seven figures (language, timing, seconds between cuts, cuts per ten seconds, top look, number of Reels, confidence) in the person's language. A
   sentence is kept only if every number in it is one of the figures (or a rounding), no number is spelled out, and it is one line under 200 characters;
   otherwise there is no sentence, and the profile is complete without one. It is written again only when the figures change.
 - **Model input.** The captions call sends up to four small JPEG frames per Reel (360 px wide), for at most twelve Reels, and the names of the Reels' ids. It
@@ -756,3 +756,70 @@ Behind `VITE_API_MODE=real`; mock mode is untouched in behaviour (its Style page
 - **The editor is unchanged.** "Apply my style" and `match my style` already worked through the chat: the assistant's request carries `applyStyle`, and the style's presence comes from the same `GET /style`.
 - **The status is polled, not pushed:** every two seconds only while something is happening.
 - **Where this cannot be tested by a browser test:** a real Instagram. The stand-in consent page is a real page on the real API, so the redirect out and back, the address cleaning and every state are exercised for real; the part after Instagram's own screen is the part that needs a Meta app.
+
+## Phase 3, step 8: hardening and documentation
+
+- **Rate limits.** The whole API keeps its 300 a minute per IP. On top of that every Style action that changes something (`POST /style/connect`, `/style/upload`,
+  `/style/sync`, `DELETE /style/reels/:id`, `DELETE /style/connect`) is limited per person, 20 a minute (`STYLE_RATE_LIMIT_PER_MIN`), and the two public addresses
+  Instagram and Meta call (`/style/callback`, `/privacy/instagram/deletion` with its status address, and the stand-in's consent page) are limited per IP at the same number. The
+  limiter runs after the login check on a route, so the per-person key is the person; reading routes (`GET /style`, `/reels`, `/status`) are not limited beyond the
+  whole-API number, because the page polls status every two seconds while something is happening. The manual sync keeps its own one-hour cooldown.
+- **A longer wait between tries for style jobs.** The `style` queue waits `STYLE_JOB_BACKOFF_MS` (30 s, doubling: 30, 60, 120, 240 s over the five tries) instead of the 2 s the other queues
+  use. What fails there is usually Instagram asking us to slow down, or storage or speech recognition being away for a minute, and neither is fixed in two seconds. Inside a job,
+  each Instagram call already waits out a rate-limit answer (at most five minutes) or a brief outage (1, 2, 4 s, with jitter) before giving up.
+- **A failed style job says what it was doing.** When tries run out the row used to say "Analysis could not be completed." whatever the job was; now sync, renewal and deletion each have their own
+  sentence and code (`SYNC_FAILED`, `REFRESH_FAILED`, `DELETION_FAILED`), still never the error that was thrown. The handler is a function (`onStyleJobFailed`) so it can be tested.
+- **Dead letters had no way to be found.** The queue kept failed jobs (`removeOnFail: false`) and the row said `failed`, but nothing listed them. `npm run jobs:dead` lists them (queue, type, id,
+  tries, when, the queue's reason, whose) and `npm run jobs:dead -- retry <id>` gives one a fresh set of tries and puts its row back to `queued`. It is an operator tool; no endpoint exposes it,
+  because the reason can contain internals. It covers all three queues.
+- **The weekly sync and the renewals** were built in Step 6; here they were watched firing. In a stack started from nothing, both schedulers ran once at start and the next run was scheduled
+  exactly 24 hours later (checked in Redis). A sync is due when an account has not been read for 6 days, not "on a weekday", so a worker that was down for a day still catches up.
+- **A mismatch found by running the whole suite, not new behaviour.** Step 7 added optional fields to the front end's `StyleProfile` and `ReelMetric` types, and the contract test that reads those types was
+  not run again. It now separates fields the front end requires (must be in every response) from those it marks optional (must be in a learned profile and may be absent from an empty one), and lists the
+  new ones. A test was also added for the case the document names: a Reel whose speech tries to give orders, and a model that obeys them, change nothing.
+- **Compose passes the new settings through** (`LEGAL_ENTITY_NAME`, `PRIVACY_CONTACT_EMAIL`, `TOKEN_ENCRYPTION_KEY`, `TOKEN_ENCRYPTION_OLD_KEYS`), all empty by default.
+
+## Deviations from the Phase 3 document, and what is not proven
+
+Where I did something other than what the document says, and why. Everything else in the document is built as written.
+
+1. **No video is ever fetched from Instagram.** The document allows a short-lived fetch "if the API allows it and its terms permit it". I could not confirm that on a Meta page (Step 1), so the
+   cautious case applies and the code has no way to do it. Consequence: an Instagram-only profile is empty, because the API gives numbers but no video and no Reel length. It ranks the Reels; the
+   style (hook timing, cut pace, captions) comes from the files the person uploads (`needs: "reel_files"`). If Meta's terms turn out to allow it, that is a separate piece of work.
+2. **Average watch percentage cannot come from Instagram alone.** It needs the Reel's length, which the API does not return. Uploaded Reels have it (probed); Instagram Reels carry the watch time
+   (milliseconds, unit unconfirmed) and no percentage. Their score uses the signals that exist.
+3. **Hook retention is `100 − reels_skip_rate`**, one value per Reel and absent if Meta does not return it ("in development"). The array stays empty rather than made up, as the document says.
+4. **Caption look is read from colour and shape, not from text.** The document says to match "the on-screen text" against the style ids. There is no text recognition (no new dependency); the editor's looks differ in a
+   pill, a box, an outline, a glow, an underline, and the rules look for those. They answer matched, ambiguous or none, and never guess. Ambiguous Reels go to the one model call, or are `custom`. These rules are
+   tuned on synthetic frames, not real Reels.
+5. **Hook timing is the earlier of the first spoken _word_ and the first strong picture change,** where the document says first spoken _sentence_. A sentence boundary needs the whole transcript; the first word is
+   what the viewer hears first, and the difference is a fraction of a second.
+6. **Speech rate and length are measured and stored for every Reel but are not in the profile and the planner does not use them.** The profile has the front end's `StyleProfile` shape, which has no field for
+   either, and the document's own `match_my_style` description uses only captions, pace and the hook. They are one query away when a use for them is decided.
+7. **No `style_jobs` table.** The document lists one; I used the existing `jobs` table with `style_*` types. It already has status, progress, retries, the live feed, the reconcile sweep and now the
+   dead-letter tool, and a second table would have needed all of that again.
+8. **The job is `style_sync` on a `style` queue, not `style.sync`.** A naming difference only. Analysis, renewal and deletion are `style_analysis`, `style_refresh`, `style_deletion`; their code is in `src/workers/style.ts`,
+   `src/style/analysis/service.ts` and `src/style/jobs/`, rather than all under `src/style/jobs/`.
+9. **Numbers are pasted, not typed per Reel.** The document allows "a small form or pasted as a CSV"; I built the paste (parsed and checked in the browser), which suits ten Reels.
+10. **Fewer than three uploaded Reels is allowed.** The document says 3 to 10. One or two give a `low` confidence profile that says so and links to add more, rather than a refusal.
+11. **An addition to the planner tools: `useMyStyle`,** an optional flag on `add_captions`, `set_caption_style` and `make_reel`, so "captions in my style" works with the Apply-my-style switch off. `set_caption_style` no
+    longer requires a `styleId`. Not in the document; without it that request reads as the assistant ignoring the person.
+12. **`DELETE /style/reels/:id` was added.** Not in the document's table; needed, because with a limit of ten Reels a person must be able to remove one to add another.
+13. **Errors keep the real earlier shape,** `{ error: { code, message, details? } }`, not the `{ message, field?, code? }` the document names for style routes. Every other route in the product has the first, and the front end reads that.
+14. **Style jobs share a worker process with editing jobs.** The document wants style analysis at a lower concurrency than editing. Both default to 1 and cannot go lower, so I gave style its own queue and its own
+    setting (`STYLE_CONCURRENCY`): a style job never takes an editing job's place in the queue, but one worker process runs all three queues, so on one machine a style job and an edit can run at the same time and share
+    the CPU. Splitting the style queue onto its own worker service would remove that; the code does not yet let a worker process choose its queues, so it is a small change to `src/worker.ts`, not built.
+15. **The weekly sync is a daily check** for accounts not read in six days (see above), not a once-a-week timer.
+16. **The contract test compares field names, not values.** The document says every response must "parse against" the shared types. The front end's types are TypeScript, which the backend cannot run; the test reads the
+    interface text from `frontend/src/types/index.ts` and checks every required field is present and nothing was added on either side. A wrong value type (a string where a number belongs) would not be caught by it; the
+    Zod response schemas that serialize every response would.
+
+**Not proven, and what would prove it**
+
+- **Instagram has never been called.** The real client is tested against recorded response shapes and a stand-in. Nothing is confirmed until a live test account exists: `account_type` for personal accounts, whether `media_product_type`
+  is returned, which metrics Reels return, the unit of `ig_reels_avg_watch_time`, the scale of `reels_skip_rate`, the rate limits, the exact format of the deletion callback. Each is one place in `src/style/instagram/real.ts`.
+- **Claude has never been called.** The vision call, the summary, the planner's choice of `match_my_style` and `EVAL_PROVIDER=anthropic npm run eval` have only run against the offline model and a stubbed provider.
+- **The caption rules, `PACE_TABLE`, the winner rule and the weights have not met real creators' Reels.** They are the first things to look at with real data. The hook-label calibration set is still waiting.
+- **Speech recognition speed.** Learning from ten Reels on a laptop CPU takes several minutes; the progress shown is by Reel, not by time.
+- **The privacy policy page is a starting point** and needs a lawyer's review, the entity's address and `PRIVACY_CONTACT_EMAIL` before it goes to Meta.
+- **`.github/workflows/ci.yml` has never been run.**

@@ -39,7 +39,12 @@ export const privacyRoutes: FastifyPluginAsyncZod = async (app) => {
       .send(privacyPage(config)),
   )
 
-  app.post('/privacy/instagram/deletion', async (req, reply) => {
+  // Public, so by address. Meta calls this once per deletion; a burst is not Meta.
+  const limited = {
+    rateLimit: { max: config.STYLE_RATE_LIMIT_PER_MIN, timeWindow: 60_000 },
+  }
+
+  app.post('/privacy/instagram/deletion', { config: limited }, async (req, reply) => {
     const secret =
       config.INSTAGRAM_APP_SECRET ??
       (config.NODE_ENV === 'production' ? null : DEVELOPMENT_APP_SECRET)
@@ -81,7 +86,7 @@ export const privacyRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.get(
     '/privacy/instagram/deletion',
-    { schema: { querystring: z.object({ code: z.string().max(64) }) } },
+    { config: limited, schema: { querystring: z.object({ code: z.string().max(64) }) } },
     async (req, reply) => {
       const found = UUID_RE.test(req.query.code)
         ? (

@@ -30,6 +30,16 @@ export const jobOptions = (
   removeOnFail: false,
 })
 
+/**
+ * The style queue waits longer between tries: what usually fails there is Instagram saying to slow down, or storage and speech
+ * recognition being briefly away, and neither is fixed in two seconds.
+ */
+export const styleJobOptions = (
+  config: Pick<Config, 'JOB_ATTEMPTS' | 'STYLE_JOB_BACKOFF_MS'>,
+): JobsOptions => ({
+  ...jobOptions({ JOB_ATTEMPTS: config.JOB_ATTEMPTS, JOB_BACKOFF_MS: config.STYLE_JOB_BACKOFF_MS }),
+})
+
 export interface Queues {
   processing: Queue<JobData>
   maintenance: Queue<JobData>
@@ -38,15 +48,22 @@ export interface Queues {
 }
 
 export function createQueues(
-  config: Pick<Config, 'REDIS_URL' | 'JOB_ATTEMPTS' | 'JOB_BACKOFF_MS'>,
+  config: Pick<Config, 'REDIS_URL' | 'JOB_ATTEMPTS' | 'JOB_BACKOFF_MS'> &
+    Partial<Pick<Config, 'STYLE_JOB_BACKOFF_MS'>>,
 ): Queues {
   const connection = createRedis(config, bullConnectionOptions)
   connection.on('error', () => undefined)
-  const make = (name: QueueName) =>
-    new Queue<JobData>(name, { connection, defaultJobOptions: jobOptions(config) })
+  const make = (name: QueueName, defaultJobOptions: JobsOptions = jobOptions(config)) =>
+    new Queue<JobData>(name, { connection, defaultJobOptions })
   const processing = make(QUEUES.processing)
   const maintenance = make(QUEUES.maintenance)
-  const style = make(QUEUES.style)
+  const style = make(
+    QUEUES.style,
+    styleJobOptions({
+      JOB_ATTEMPTS: config.JOB_ATTEMPTS,
+      STYLE_JOB_BACKOFF_MS: config.STYLE_JOB_BACKOFF_MS ?? 30_000,
+    }),
+  )
   return {
     processing,
     maintenance,

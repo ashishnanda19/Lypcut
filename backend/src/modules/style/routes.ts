@@ -31,6 +31,18 @@ import { StyleService } from './service.js'
 export const styleRoutes: FastifyPluginAsyncZod = async (app) => {
   const service = new StyleService(app.deps, app.log)
   const auth = { onRequest: app.authenticate }
+  // Every action that changes something is limited to a few a minute, on top of the whole-API limit: for a signed-in person it counts
+  // that person (the limiter runs after the login check), so one shared address does not share a limit. The pages that only read are not.
+  const { STYLE_RATE_LIMIT_PER_MIN: perMinute } = app.deps.config
+  const limited = {
+    rateLimit: {
+      max: perMinute,
+      timeWindow: 60_000,
+      keyGenerator: (req: { user?: { id: string } | null; ip: string }) => req.user?.id ?? req.ip,
+    },
+  }
+  // Public: Instagram's return address and the stand-in screen. By address.
+  const publicLimited = { rateLimit: { max: perMinute, timeWindow: 60_000 } }
 
   app.get('/style', { ...auth, schema: { response: { 200: styleProfileSchema } } }, (req) =>
     service.profile(req.user!.id),
@@ -48,13 +60,17 @@ export const styleRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.post(
     '/style/upload',
-    { ...auth, schema: { body: submitUploadBody, response: { 200: styleProfileSchema } } },
+    {
+      ...auth,
+      config: limited,
+      schema: { body: submitUploadBody, response: { 200: styleProfileSchema } },
+    },
     (req) => service.submit(req.user!.id, req.body),
   )
 
   app.post(
     '/style/connect',
-    { ...auth, schema: { response: { 200: connectResponseSchema } } },
+    { ...auth, config: limited, schema: { response: { 200: connectResponseSchema } } },
     (req) => service.startConnect(req.user!.id),
   )
 
@@ -63,17 +79,21 @@ export const styleRoutes: FastifyPluginAsyncZod = async (app) => {
    * another site), but nothing happens without the single-use state, and a session that is someone else's is refused. It always
    * answers with a redirect to the Style page, which says what happened.
    */
-  app.get('/style/callback', { schema: { querystring: callbackQuery } }, async (req, reply) => {
-    const oauth = new InstagramOAuth(app.deps, app.log, requireInstagram(app.deps))
-    const token = req.cookies[ACCESS_COOKIE]
-    const session = token ? await verifyAccessToken(app.deps.config, token) : null
-    const result = await oauth.callback(req.query, session)
-    return reply.redirect(oauth.redirectFor(result))
-  })
+  app.get(
+    '/style/callback',
+    { config: publicLimited, schema: { querystring: callbackQuery } },
+    async (req, reply) => {
+      const oauth = new InstagramOAuth(app.deps, app.log, requireInstagram(app.deps))
+      const token = req.cookies[ACCESS_COOKIE]
+      const session = token ? await verifyAccessToken(app.deps.config, token) : null
+      const result = await oauth.callback(req.query, session)
+      return reply.redirect(oauth.redirectFor(result))
+    },
+  )
 
   app.post(
     '/style/sync',
-    { ...auth, schema: { response: { 202: syncResponseSchema } } },
+    { ...auth, config: limited, schema: { response: { 202: syncResponseSchema } } },
     async (req, reply) => reply.status(202).send(await service.triggerSync(req.user!.id)),
   )
 
@@ -82,7 +102,7 @@ export const styleRoutes: FastifyPluginAsyncZod = async (app) => {
     const esc = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
     app.get(
       '/style/fake-instagram/authorize',
-      { schema: { querystring: z.object({ state: z.string().max(256) }) } },
+      { config: publicLimited, schema: { querystring: z.object({ state: z.string().max(256) }) } },
       async (req, reply) => {
         const go = (params: string) =>
           `/api/style/callback?${params}&state=${encodeURIComponent(req.query.state)}`
@@ -104,7 +124,7 @@ ${link(go('error=access_denied'), 'Cancel')}
 
   app.delete(
     '/style/reels/:id',
-    { ...auth, schema: { params: idParam, response: { 200: okSchema } } },
+    { ...auth, config: limited, schema: { params: idParam, response: { 200: okSchema } } },
     async (req) => {
       await service.deleteReel(req.user!.id, req.params.id)
       return { ok: true as const }
@@ -113,7 +133,7 @@ ${link(go('error=access_denied'), 'Cancel')}
 
   app.delete(
     '/style/connect',
-    { ...auth, schema: { response: { 200: styleProfileSchema } } },
+    { ...auth, config: limited, schema: { response: { 200: styleProfileSchema } } },
     (req) => service.disconnect(req.user!.id),
   )
 }

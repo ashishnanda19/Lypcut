@@ -80,7 +80,7 @@ test('real backend: upload Reels, see a style, match it in the editor', async ({
 
   // The files go up, then the learning is followed live, then the profile appears.
   await expect(page.getByText('Learning your style').first()).toBeVisible({ timeout: 120_000 })
-  await expect(page.getByText('Learned from uploaded Reels')).toBeVisible({ timeout: 240_000 })
+  await expect(page.getByText('Learned from uploaded Reels')).toBeVisible({ timeout: 420_000 })
   await expect(page.getByText('3 Reels analysed')).toBeVisible()
   await expect(page.getByText('This is a first guess')).toBeVisible()
   await expect(page.getByText('Music', { exact: true })).toHaveCount(0)

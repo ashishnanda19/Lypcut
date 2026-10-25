@@ -218,6 +218,10 @@ export const envSchema = z
       .min(1_000_000)
       .default(300 * 1024 * 1024),
     STYLE_CONCURRENCY: z.coerce.number().int().min(1).default(1),
+    /** First wait before a style job is tried again (doubling each time). Longer than other jobs: Instagram's limits are measured in minutes. */
+    STYLE_JOB_BACKOFF_MS: z.coerce.number().int().min(0).default(30_000),
+    /** Requests a minute for each Style action that changes something (per person, or per address for the public callbacks). */
+    STYLE_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(20),
 
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(2),
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4001),

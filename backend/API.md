@@ -28,7 +28,9 @@ the same as for something that does not exist.
 time); timeline clips carry both `start` (timeline time) and `srcIn` (source time).
 
 **Rate limits.** Sign-in endpoints allow 10 requests a minute per IP, and 5 wrong passwords lock an account's logins for
-15 minutes. Other endpoints allow 300 a minute per IP. `429` carries `Retry-After`.
+15 minutes. Other endpoints allow 300 a minute per IP. The Style actions that change something (`POST /style/connect`, `/style/upload`,
+`/style/sync`, `DELETE /style/reels/{id}`, `DELETE /style/connect`) allow 20 a minute per person (`STYLE_RATE_LIMIT_PER_MIN`), and the public
+ones Instagram and Meta call (`/style/callback`, `/privacy/instagram/deletion`) 20 a minute per IP. `429` carries `Retry-After`.
 
 **Compression.** Responses over 1 KB are compressed when the client sends `Accept-Encoding`.
 

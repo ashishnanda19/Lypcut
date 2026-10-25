@@ -37,3 +37,8 @@ understands looser phrasing.
 - **Search finds nothing for a loose phrase:** the offline search by meaning is a small model; try a phrase close to what was said, or
   use Claude and a longer video.
 - **The Clips tab is empty:** a video shorter than about 15 seconds has no hook-sized stretch.
+
+## The style demo
+
+Teaching the assistant a creator's own style (upload five Reels, see the profile, say "match my style", apply, undo) has its own
+three-minute script in the [backend README](backend/README.md#trying-it-in-three-minutes).

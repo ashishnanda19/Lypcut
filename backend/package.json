@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit",
     "models:download": "tsx --env-file-if-exists=.env src/tools/download-whisper-model.ts",
     "build:pkg": "tsc -p ../packages/timeline-core/tsconfig.json",
+    "jobs:dead": "tsx --env-file-if-exists=.env src/tools/dead-letters.ts",
     "db:migrate:down": "tsx --env-file-if-exists=.env src/db/migrate-down.ts",
     "models:download-embeddings": "tsx --env-file-if-exists=.env src/tools/download-embedding-model.ts"
   },

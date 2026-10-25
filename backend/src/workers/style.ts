@@ -110,6 +110,41 @@ export async function processStyleJob(
   return result
 }
 
+/** What the row says when a job is out of retries, by what it was doing. Never the error itself: that can name a file or an address. */
+const GIVEN_UP: Record<string, { message: string; code: string }> = {
+  style_analysis: { message: 'Analysis could not be completed.', code: 'ANALYSIS_FAILED' },
+  style_sync: { message: 'Instagram could not be read just now.', code: 'SYNC_FAILED' },
+  style_refresh: {
+    message: 'The Instagram connection could not be renewed.',
+    code: 'REFRESH_FAILED',
+  },
+  style_deletion: { message: 'Stored files could not be deleted yet.', code: 'DELETION_FAILED' },
+}
+
+/**
+ * A try failed. While tries remain the queue waits (longer each time) and runs it again. When they run out the row says so,
+ * and the queue keeps the failed job (the dead-letter path: `npm run jobs:dead` lists them), so nothing is lost silently.
+ */
+export function onStyleJobFailed(
+  ctx: WorkerContext,
+  bull: Pick<BullJob<JobData>, 'data' | 'attemptsMade' | 'opts' | 'name'>,
+  e: Error,
+): Promise<void> {
+  const exhausted = bull.attemptsMade >= (bull.opts.attempts ?? 1)
+  ctx.log.warn(
+    { jobId: bull.data.jobId, type: bull.name, attempt: bull.attemptsMade, exhausted, err: e },
+    exhausted ? 'style job gave up' : 'style job attempt failed',
+  )
+  if (!exhausted) return Promise.resolve()
+  const why = GIVEN_UP[bull.name] ?? GIVEN_UP['style_analysis']!
+  return mark(ctx, bull.data.jobId, {
+    status: 'failed',
+    error: why.message,
+    errorCode: why.code,
+    finishedAt: new Date(),
+  }).catch((err) => ctx.log.error({ err, jobId: bull.data.jobId }, 'could not record a failed job'))
+}
+
 export function createStyleWorker(
   ctx: WorkerContext,
   provider: TranscriptionProvider,
@@ -121,20 +156,7 @@ export function createStyleWorker(
   })
   worker.on('error', (e) => ctx.log.error({ err: e }, 'style worker error'))
   worker.on('failed', (bull, e) => {
-    if (!bull) return
-    const exhausted = bull.attemptsMade >= (bull.opts.attempts ?? 1)
-    ctx.log.warn(
-      { jobId: bull.data.jobId, attempt: bull.attemptsMade, exhausted, err: e },
-      'style job attempt failed',
-    )
-    // Out of retries: the row says so (the queue keeps the failed job, which is the dead-letter path).
-    if (exhausted)
-      void mark(ctx, bull.data.jobId, {
-        status: 'failed',
-        error: 'Analysis could not be completed.',
-        errorCode: 'ANALYSIS_FAILED',
-        finishedAt: new Date(),
-      }).catch(() => undefined)
+    if (bull) void onStyleJobFailed(ctx, bull, e)
   })
   return worker
 }

@@ -32,6 +32,11 @@ x-app-env: &app-env
   INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
   INSTAGRAM_REDIRECT_URI: ${INSTAGRAM_REDIRECT_URI:-}
   APP_URL: ${APP_URL:-http://localhost:5173}
+  LEGAL_ENTITY_NAME: ${LEGAL_ENTITY_NAME:-Lypcut}
+  PRIVACY_CONTACT_EMAIL: ${PRIVACY_CONTACT_EMAIL:-}
+  # Empty uses the built-in development key. Anything real (production) sets its own: see .env.example.
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+  TOKEN_ENCRYPTION_OLD_KEYS: ${TOKEN_ENCRYPTION_OLD_KEYS:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
   # What the browser uses for presigned URLs (the host-mapped MinIO port).

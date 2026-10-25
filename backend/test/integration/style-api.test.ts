@@ -621,11 +621,14 @@ describe('no response ever contains a token', () => {
 
 describe('the shapes the front end reads', () => {
   const types = path.resolve(import.meta.dirname, '../../../frontend/src/types/index.ts')
-  const fields = (name: string): string[] => {
+  /** The fields the front end declares: all of them, or only those it does not mark optional (`?`). */
+  const fields = (name: string, o: { required?: boolean } = {}): string[] => {
     const body = new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(
       fs.readFileSync(types, 'utf8'),
     )![1]!
-    return [...body.matchAll(/^\s{2}(\w+)\??:/gm)].map((m) => m[1]!)
+    return [...body.matchAll(/^\s{2}(\w+)(\?)?:/gm)]
+      .filter((m) => !(o.required && m[2]))
+      .map((m) => m[1]!)
   }
 
   it.skipIf(!fs.existsSync(types))(
@@ -634,12 +637,14 @@ describe('the shapes the front end reads', () => {
       const p = await signup(t)
       await learnedStyle(p)
       const profile = (await p.c.get('/api/style')).body
+      // A learned profile carries everything, including the fields the front end treats as optional (except the handle, which
+      // only an Instagram profile has).
       for (const f of fields('StyleProfile').filter((x) => x !== 'handle'))
         expect(profile, f).toHaveProperty(f)
       const [reel] = (await p.c.get('/api/style/reels')).body
       for (const f of fields('ReelMetric')) expect(reel, f).toHaveProperty(f)
       const empty = (await (await signup(t)).c.get('/api/style')).body
-      for (const f of fields('StyleProfile').filter((x) => x !== 'handle'))
+      for (const f of fields('StyleProfile', { required: true }).filter((x) => x !== 'handle'))
         expect(empty, f).toHaveProperty(f)
     },
   )
@@ -651,6 +656,7 @@ describe('the shapes the front end reads', () => {
         [
           'captionStyles',
           'colors',
+          'confidence',
           'connected',
           'cutPace',
           'fonts',
@@ -660,18 +666,24 @@ describe('the shapes the front end reads', () => {
           'music',
           'reelsAnalysed',
           'source',
+          'summary',
+          'updatedAt',
         ].sort(),
       )
       expect(fields('ReelMetric').sort()).toEqual(
         [
           'avgWatchPct',
+          'comments',
           'durationSec',
+          'engagement',
           'id',
           'likes',
           'postedAt',
           'saves',
           'shares',
+          'source',
           'thumbSeed',
+          'thumbUrl',
           'title',
           'views',
         ].sort(),
