@@ -8,8 +8,11 @@ import type {
   Scene,
   SearchResult,
   StyleProfile,
+  StyleStatus,
+  InstagramStart,
   Transcript,
 } from '@/types'
+import { isReal } from '@/lib/runtime'
 import { api } from './client'
 
 export const keys = {
@@ -22,6 +25,7 @@ export const keys = {
   search: (id: string, q: string) => ['search', id, q] as const,
   style: ['style'] as const,
   reels: ['reels'] as const,
+  styleStatus: ['style', 'status'] as const,
 }
 
 export const useProjects = () =>
@@ -86,6 +90,57 @@ export const useStyle = () =>
   useQuery({ queryKey: keys.style, queryFn: () => api.get<StyleProfile>('/style') })
 export const useReels = () =>
   useQuery({ queryKey: keys.reels, queryFn: () => api.get<ReelMetric[]>('/style/reels') })
+
+/** States in which something is still going on, so the page keeps asking. */
+const ACTIVE = new Set(['analysing', 'syncing'])
+
+/**
+ * Where style learning is (real backend only: the mock answers straight away). Asks every couple of seconds while Reels are being
+ * learned from or Instagram is being read, and not otherwise.
+ */
+export const useStyleStatus = () =>
+  useQuery({
+    queryKey: keys.styleStatus,
+    queryFn: () => api.get<StyleStatus>('/style/status'),
+    enabled: isReal,
+    refetchInterval: (q) => (ACTIVE.has(q.state.data?.state ?? '') ? 2000 : false),
+  })
+
+/** Asks the server where to send the person to connect Instagram, and what to tell them first. */
+export const useStartInstagram = () =>
+  useMutation({ mutationFn: () => api.post<InstagramStart>('/style/connect') })
+
+export function useSyncStyle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ jobId: string }>('/style/sync'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.styleStatus }),
+  })
+}
+
+/** Learn from the Reels that have finished uploading, with their numbers if the person gave any. */
+export function useSubmitStyleReels() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { count: number; metrics?: object[] }) =>
+      api.post<StyleProfile>('/style/upload', body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.styleStatus })
+    },
+  })
+}
+
+export function useRemoveReel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: true }>(`/style/reels/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.style })
+      void qc.invalidateQueries({ queryKey: keys.reels })
+      void qc.invalidateQueries({ queryKey: keys.styleStatus })
+    },
+  })
+}
 
 export function useCreateProject() {
   const qc = useQueryClient()
@@ -160,6 +215,7 @@ export function useDisconnectStyle() {
     onSuccess: (p) => {
       qc.setQueryData(keys.style, p)
       qc.invalidateQueries({ queryKey: keys.reels })
+      qc.invalidateQueries({ queryKey: keys.styleStatus })
     },
   })
 }

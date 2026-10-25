@@ -11,13 +11,15 @@ import { isReal } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 
 /**
- * VITE_API_MODE picks the backend. In "mock" the in-browser mock answers every /api route. In "real" the Lypcut
- * backend does, and the mock only answers /api/style/* (a later phase). Either way it starts before the first render,
- * so no request ever reaches a missing handler.
+ * VITE_API_MODE picks the backend. In "mock" the in-browser mock answers every /api route, and starts before the first
+ * render so no request ever reaches a missing handler. In "real" the Lypcut backend answers everything (Style included) and
+ * the mock is not loaded at all.
  */
 async function boot() {
-  const { startMockApi } = await import('@/mocks/browser')
-  await startMockApi(isReal ? 'style' : 'all')
+  if (!isReal) {
+    const { startMockApi } = await import('@/mocks/browser')
+    await startMockApi()
+  }
   // A stored sign-in is only a hint: ask the server whether it still holds before showing anything private.
   await useAuth.getState().hydrate()
   createRoot(document.getElementById('root')!).render(

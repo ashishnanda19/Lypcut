@@ -2,7 +2,7 @@
  * Which backend the app talks to, decided once at build time by VITE_API_MODE.
  *
  *   mock  the in-browser mock API answers everything (the default; no server needed)
- *   real  the Lypcut backend answers everything except /style/*, which is still mocked (Phase 3)
+ *   real  the Lypcut backend answers everything, Style included
  */
 export type ApiMode = 'mock' | 'real'
 

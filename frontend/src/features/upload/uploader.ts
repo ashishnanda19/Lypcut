@@ -9,12 +9,18 @@
 import { api as defaultApi, ApiError } from '@/api/client'
 import type { Job, Project } from '@/types'
 
+/** Where a video is going: a new project (the default), or a Reel that teaches the assistant the person's style. */
+export interface UploadOptions {
+  purpose?: 'style_reel'
+}
+
 export interface UploadEvents {
   /** 0-100, and a rough number of seconds left once there is enough data to guess. */
   progress(percent: number, secondsLeft: number | null): void
   /** Every byte is sent; the server is checking the file and starting processing. */
   finishing(): void
-  done(projectId: string): void
+  /** The project's id, or for a style Reel the Reel's. */
+  done(id: string): void
   failed(message: string, retryable: boolean): void
 }
 
@@ -29,7 +35,7 @@ export interface UploadHandle {
 
 interface UploadDto {
   id: string
-  projectId: string
+  projectId: string | null
   status: string
   sizeBytes: number
   partSize: number
@@ -108,6 +114,8 @@ const COMPLETE_ROUNDS = 3
 const FINAL_CODES = new Set([
   'LIMIT_VIDEO_LENGTH',
   'LIMIT_MONTHLY_UPLOADS',
+  'LIMIT_STYLE_REELS',
+  'LIMIT_REEL_LENGTH',
   'UNSUPPORTED_MEDIA',
   'PAYLOAD_TOO_LARGE',
   'CHECKSUM_MISMATCH',
@@ -122,6 +130,7 @@ export class Uploader implements UploadHandle {
   private readonly file: File
   private readonly durationSec: number | undefined
   private readonly events: UploadEvents
+  private readonly options: UploadOptions
   private projectId: string | null = null
   private upload: UploadDto | null = null
   private sent = new Map<number, number>()
@@ -142,7 +151,9 @@ export class Uploader implements UploadHandle {
     deps: Partial<UploaderDeps> = {},
     /** Continue an earlier, unfinished upload into this project instead of making a new one. */
     projectId: string | null = null,
+    options: UploadOptions = {},
   ) {
+    this.options = options
     this.projectId = projectId
     this.file = file
     this.durationSec = durationSec
@@ -219,7 +230,7 @@ export class Uploader implements UploadHandle {
       this.adopt(upload)
       return
     }
-    if (!this.projectId) {
+    if (!this.projectId && !this.options.purpose) {
       const { project } = await this.deps.api.post<{ project: Project }>('/projects', {
         fileName: this.file.name,
         ...(this.durationSec ? { durationSec: this.durationSec } : {}),
@@ -227,7 +238,8 @@ export class Uploader implements UploadHandle {
       this.projectId = project.id
     }
     const { upload } = await this.deps.api.post<{ upload: UploadDto }>('/uploads', {
-      projectId: this.projectId,
+      // A style Reel has no project: it says what it is for instead.
+      ...(this.options.purpose ? { purpose: this.options.purpose } : { projectId: this.projectId }),
       fileName: this.file.name,
       contentType: this.file.type || undefined,
       sizeBytes: this.file.size,
@@ -335,12 +347,14 @@ export class Uploader implements UploadHandle {
     this.events.finishing()
     for (let round = 1; ; round++) {
       try {
-        const res = await this.deps.api.post<{ project: Project; job: Job }>(
-          `/uploads/${this.upload!.id}/complete`,
-        )
+        const res = await this.deps.api.post<{
+          project?: Project
+          job?: Job
+          reel?: { id: string }
+        }>(`/uploads/${this.upload!.id}/complete`)
         this.finished = true
         this.events.progress(100, 0)
-        this.events.done(res.project.id)
+        this.events.done((res.project?.id ?? res.reel?.id)!)
         return
       } catch (e) {
         if (!(e instanceof ApiError)) throw e

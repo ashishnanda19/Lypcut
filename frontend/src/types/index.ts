@@ -240,13 +240,20 @@ export interface ReelMetric {
   id: string
   title: string
   thumbSeed: string
-  views: number
-  likes: number
-  saves: number
-  shares: number
-  avgWatchPct: number
+  /** A short-lived link to the Reel's picture. Absent in mock mode and while there is none: show the placeholder from `thumbSeed`. */
+  thumbUrl?: string
+  /** A number that is not known is null, never 0: Instagram did not say, or the person did not type it. */
+  views: number | null
+  likes: number | null
+  saves: number | null
+  shares: number | null
+  comments?: number | null
+  avgWatchPct: number | null
   durationSec: number
   postedAt: string
+  /** 0-100 against the person's other Reels. Null when there are no numbers to score. */
+  engagement?: number | null
+  source?: 'instagram' | 'upload'
 }
 
 export interface StyleProfile {
@@ -257,14 +264,39 @@ export interface StyleProfile {
   hookTimingSec: number
   /** Cuts per 10 seconds. */
   cutPace: number
-  /** Share of reels per caption style id. */
+  /** Share of reels per caption style id. `custom` is captions the editor has no look for. */
   captionStyles: { id: string; share: number }[]
-  /** Share of reels per music type. */
+  /** Not learned in this version: always empty from the real backend. */
   music: { label: string; share: number }[]
-  /** Average first-3-seconds retention for the last 8 reels, 0-100. */
+  /** Average first-3-seconds retention for the last 8 reels, 0-100. Empty unless Instagram supplied it. */
   hookRetention: number[]
   fonts: string[]
   colors: string[]
+  /** How sure the profile is, from how many Reels it is learned from. Absent in mock mode. */
+  confidence?: 'low' | 'medium' | 'high'
+  updatedAt?: string | null
+  /** One sentence about the style, in the person's language. */
+  summary?: string
+}
+
+export type StyleState = 'idle' | 'syncing' | 'analysing' | 'ready' | 'reauth_required' | 'failed'
+
+/** Where style learning is. Only the real backend has one. */
+export interface StyleStatus {
+  state: StyleState
+  progress: number
+  reels: { total: number; analysed: number; analysing: number; pending: number; failed: number }
+  failed: { id: string; label: string; code: string; message: string }[]
+  updatedAt: string | null
+  /** `reel_files`: Instagram is connected but there is no video to learn the style from yet. */
+  needs: 'reel_files' | null
+}
+
+/** What the server says before the person is sent to Instagram. */
+export interface InstagramStart {
+  authUrl: string
+  consent: { reads: string[]; uses: string; never: string[]; disconnect: string }
+  scopes: string[]
 }
 
 export interface User {

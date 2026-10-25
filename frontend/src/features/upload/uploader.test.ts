@@ -5,7 +5,12 @@ import { PartError, Uploader, type PutPart, type UploadEvents } from './uploader
 const PART = 10
 
 /** A tiny stand-in for the API and for storage, enough to exercise the uploader's decisions. */
-function fakeServer(opts: { size: number; limit?: 'length'; expireOnComplete?: boolean }) {
+function fakeServer(opts: {
+  size: number
+  limit?: 'length' | 'reels'
+  expireOnComplete?: boolean
+  style?: boolean
+}) {
   const stored = new Map<number, number>()
   const calls: string[] = []
   let uploads = 0
@@ -13,7 +18,7 @@ function fakeServer(opts: { size: number; limit?: 'length'; expireOnComplete?: b
   const totalParts = Math.ceil(opts.size / PART)
   const dto = () => ({
     id: `u${uploads}`,
-    projectId: 'p1',
+    projectId: opts.style ? null : 'p1',
     status: 'uploading',
     sizeBytes: opts.size,
     partSize: PART,
@@ -29,6 +34,10 @@ function fakeServer(opts: { size: number; limit?: 'length'; expireOnComplete?: b
       calls.push(`POST ${path}`)
       if (path === '/projects') return { project: { id: 'p1' } }
       if (path === '/uploads') {
+        if (opts.limit === 'reels')
+          throw new ApiError('You can have up to 10 Reels.', 403, undefined, 'LIMIT_STYLE_REELS', {
+            max: 10,
+          })
         if (opts.limit)
           throw new ApiError(
             'Free plan videos can be up to 10 minutes.',
@@ -62,6 +71,7 @@ function fakeServer(opts: { size: number; limit?: 'length'; expireOnComplete?: b
             missing,
             wrongSize: [],
           })
+        if (opts.style) return { upload: dto(), reel: { id: 'r1', label: 'talk', durationSec: 12 } }
         return { project: { id: 'p1' }, job: { id: 'j1' } }
       }
       throw new Error(`unexpected POST ${path}`)
@@ -423,5 +433,66 @@ describe('cancelling', () => {
     up.cancel()
     await settle()
     expect(server.calls.some((c) => c.startsWith('DELETE'))).toBe(false)
+  })
+})
+
+describe('a Reel for style learning', () => {
+  const style = { purpose: 'style_reel' as const }
+
+  it('opens the upload for the purpose, with no project, and says which Reel it became', async () => {
+    const server = fakeServer({ size: 25, style: true })
+    const store = storage(server)
+    const { ev, log } = events()
+    new Uploader(
+      file(25),
+      undefined,
+      ev,
+      { api: server.api as never, put: store.put, ...instant },
+      null,
+      style,
+    ).start()
+    await until(() => log.includes('done:r1'))
+    expect(server.calls).not.toContain('POST /projects')
+    const start = server.api.post.mock.calls.find((c) => c[0] === '/uploads')!
+    expect(start[1]).toMatchObject({ purpose: 'style_reel', fileName: 'talk.mp4', sizeBytes: 25 })
+    expect(start[1]).not.toHaveProperty('projectId')
+    expect(store.sent.sort()).toEqual([1, 2, 3])
+    expect(log).toEqual(['finishing', 'done:r1'])
+  })
+
+  it('a Reel the person may not add is final, and there is no project to clean up', async () => {
+    const server = fakeServer({ size: 25, style: true, limit: 'reels' })
+    const { ev, log } = events()
+    new Uploader(
+      file(25),
+      undefined,
+      ev,
+      { api: server.api as never, put: storage(server).put, ...instant },
+      null,
+      style,
+    ).start()
+    await until(() => log.some((l) => l.startsWith('failed')))
+    expect(log).toEqual(['failed:final:You can have up to 10 Reels.'])
+    await settle()
+    expect(server.calls.filter((c) => c.startsWith('DELETE'))).toEqual([])
+  })
+
+  it('cancelling removes the upload and touches no project', async () => {
+    const server = fakeServer({ size: 25, style: true })
+    const { ev, log } = events()
+    const up = new Uploader(
+      file(25),
+      undefined,
+      ev,
+      { api: server.api as never, put: async () => new Promise(() => undefined), ...instant },
+      null,
+      style,
+    )
+    up.start()
+    await until(() => server.calls.includes('POST /uploads'))
+    up.cancel()
+    await until(() => server.calls.some((c) => c.startsWith('DELETE /uploads/')))
+    expect(server.calls.filter((c) => c.startsWith('DELETE /projects'))).toEqual([])
+    expect(log).not.toContain('done:r1')
   })
 })

@@ -67,7 +67,7 @@ const jobsHandler = jobsSocket.addEventListener('connection', ({ client }) => {
   client.addEventListener('close', () => unsubs.forEach((u) => u()))
 })
 
-/** Style profile routes. Against the real backend these are still answered here (Phase 3). */
+/** Style profile routes, for mock mode. The real backend answers them itself. */
 export const styleHandlers = [
   http.get('/api/style', async () => {
     await lag()
